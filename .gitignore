@@ -1,0 +1,17 @@
+# runtime artifacts
+*.log
+oplog.sqlite
+oplog.sqlite-*
+snapshots/
+test-replay*.sqlite
+test-replay*.json
+test-web-config.json
+x32mirror.cmd
+
+# python
+__pycache__/
+*.pyc
+.venv/
+
+# tooling
+.workbuddy/
