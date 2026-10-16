@@ -19,9 +19,11 @@ from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import cloud
+from .desktop_page import DESKTOP_PAGE
 from .drivers import DRIVERS, get_driver
 from .engine import MirrorEngine, restore_snapshot
 from .gui import HELP_CAUTION, HELP_FAQ, HELP_USAGE
+from .ha import send_ha_command
 
 log = logging.getLogger("x32mirror.web")
 
@@ -151,13 +153,31 @@ class EngineManager:
                 "clients": len(eng.clients),
                 "consoles": [{
                     "name": c["name"], "host": c["host"], "port": c["port"],
-                    "age_s": c["last_seen_age_s"], "online": c["online"], "alert": c["alert"],
+                    "age_s": c["last_seen_age_s"], "last_seen_age_s": c["last_seen_age_s"],
+                    "online": c["online"], "alert": c["alert"],
                 } for c in cons],
                 "state_paths": len(eng.state),
                 "sync_paths": detail["sync_paths"],
                 "drivers": [detail["driver_a"], detail["driver_b"]],
             })
         return out
+
+    def ha_info(self) -> dict:
+        """HA role/epoch/peer snapshot for the UI (empty when disabled)."""
+        eng = self.engine
+        ha = getattr(eng, "ha", None) if eng else None
+        if ha is None:
+            return {"enabled": False}
+        peer = getattr(ha, "_peer", None)
+        return {
+            "enabled": True,
+            "node_id": getattr(ha, "node_id", None),
+            "peer_host": getattr(ha, "peer_host", None),
+            "port": getattr(ha, "port", None),
+            "active": bool(getattr(ha, "active", False)),
+            "epoch": int(getattr(ha, "epoch", 0) or 0),
+            "peer": peer,
+        }
 
     def snapshot_now(self, cfg: dict, wait: float = 3.0) -> dict:
         """Thread-safe: snapshot from the running engine, or read via a temp engine."""
@@ -245,6 +265,8 @@ class WebApp:
                 path = self.path.split("?")[0]
                 if path in ("/", "/index.html"):
                     self._send(200, PAGE.encode("utf-8"), "text/html; charset=utf-8")
+                elif path == "/desktop":
+                    self._send(200, DESKTOP_PAGE.encode("utf-8"), "text/html; charset=utf-8")
                 elif path == "/api/status":
                     self._json(app.mgr.status())
                 elif path == "/api/logs":
@@ -280,6 +302,8 @@ class WebApp:
                         self._json({"error": "host query parameter required"}, 400)
                 elif path == "/api/docs":
                     self._json({"usage": HELP_USAGE, "caution": HELP_CAUTION, "faq": HELP_FAQ})
+                elif path == "/api/ha":
+                    self._json(app.mgr.ha_info())
                 else:
                     self._json({"error": "not found"}, 404)
 
@@ -320,6 +344,18 @@ class WebApp:
                         self._json({"ok": True})
                     except Exception as exc:  # noqa: BLE001
                         self._json({"ok": False, "error": str(exc)}, 500)
+                elif path == "/api/ha":
+                    action = str(body.get("action") or "status")
+                    ha_cfg = dict(app.cfg.get("ha") or {})
+                    port = int(ha_cfg.get("port") or 49900)
+                    host = ha_cfg.get("peer_host") or "127.0.0.1"
+                    ack = send_ha_command(host, port, action)
+                    if ack is None:
+                        self._json({"ok": False,
+                                    "error": f"HA 节点无应答（{host}:{port}）。"
+                                             "确认本节点已启用双机热备并正在运行。"})
+                    else:
+                        self._json({"ok": True, "ack": ack})
                 else:
                     self._json({"error": "not found"}, 404)
 

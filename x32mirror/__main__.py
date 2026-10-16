@@ -15,6 +15,7 @@ import sys
 import time
 
 from .engine import MirrorEngine, restore_snapshot
+from .ha import send_ha_command
 from .mapping import MAPS
 from .simulator import FADER_PATHS, MUTE_PATHS, MockRemoteApp, MockWing, MockX32
 
@@ -480,20 +481,6 @@ async def cmd_web(args):
         app.stop_http()
 
 
-def send_ha_command(host, port, action, timeout=2.0):
-    """Send a manual-switch command to a node's HA port; return its ack dict."""
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.settimeout(timeout)
-    try:
-        sock.sendto(json.dumps({"app": "x32mirror", "cmd": action}).encode("utf-8"), (host, int(port)))
-        data, _ = sock.recvfrom(4096)
-        return json.loads(data.decode("utf-8"))
-    except socket.timeout:
-        return None
-    finally:
-        sock.close()
-
-
 async def cmd_simulate_proxy():
     """Remote-app proxy test: a fake Mixing Station syncs through the tool."""
     a = MockX32("A", "127.0.0.1", 11023)
@@ -660,6 +647,10 @@ def main(argv=None):
 
     p_gui = sub.add_parser("gui", help="launch the desktop GUI (default when no command given)")
     p_gui.add_argument("--config", default="config.json")
+    p_gui.add_argument("--classic", action="store_true",
+                       help="force the classic tkinter UI instead of the macOS-style UI")
+    p_gui.add_argument("--browser", action="store_true",
+                       help="open the new UI in the default browser instead of a native window")
 
     p_run = sub.add_parser("run", help="mirror real consoles")
     p_run.add_argument("--config", default="config.json")
@@ -728,8 +719,23 @@ def main(argv=None):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     if args.cmd == "gui":
-        from .gui import run_gui
-        run_gui(args.config)
+        with open(args.config, "r", encoding="utf-8") as fh:
+            gui_cfg = json.load(fh)
+        if args.classic:
+            from .gui import run_gui
+            run_gui(args.config)
+        elif args.browser:
+            from .desktop import open_in_browser
+            sys.exit(open_in_browser(gui_cfg, args.config))
+        else:
+            from .desktop import open_in_browser, run_desktop
+            rc = run_desktop(gui_cfg, args.config)
+            if rc == 2:  # pywebview missing -> classic tkinter UI
+                from .gui import run_gui
+                run_gui(args.config)
+            elif rc in (3, 4):  # port busy / window failed -> plain browser
+                sys.exit(open_in_browser(gui_cfg, args.config))
+            sys.exit(rc)
     elif args.cmd == "run":
         with open(args.config, "r", encoding="utf-8") as fh:
             cfg = json.load(fh)

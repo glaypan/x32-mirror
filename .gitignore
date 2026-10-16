@@ -2,6 +2,8 @@
 *.log
 oplog.sqlite
 oplog.sqlite-*
+oplog-demo.sqlite
+oplog-demo.sqlite-*
 snapshots/
 test-replay*.sqlite
 test-replay*.json

@@ -27,9 +27,29 @@ over - this prevents split-brain flapping.
 import asyncio
 import json
 import logging
+import socket
 import time
 
 log = logging.getLogger("x32mirror.ha")
+
+
+def send_ha_command(host, port, action, timeout=2.0):
+    """Send a manual-switch command to a node's HA port; return its ack dict.
+
+    Shared by the CLI (`ha-switch`) and the web/desktop UI (`/api/ha`).
+    Returns None on timeout (node down / wrong port / firewalled).
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(timeout)
+    try:
+        sock.sendto(json.dumps({"app": "x32mirror", "cmd": action}).encode("utf-8"),
+                    (host, int(port)))
+        data, _ = sock.recvfrom(4096)
+        return json.loads(data.decode("utf-8"))
+    except (socket.timeout, OSError):
+        return None
+    finally:
+        sock.close()
 
 
 class HANode(asyncio.DatagramProtocol):

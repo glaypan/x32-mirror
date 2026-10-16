@@ -61,6 +61,8 @@ x32mirror --help             # 全部命令
 
 ### 方式一：图形界面（零安装直接用）
 
+**默认弹出全新 macOS 风格界面**（毛玻璃材质 / 亮暗色自动适配 / 8 种强调色 / SF 字体 / 实时同步通道可视化 / 圆角窗口与红绿灯按钮）：
+
 **Windows**：双击 **`启动界面.bat`**（或运行 `python -m x32mirror`，不带参数即弹 GUI）。
 
 **macOS（最低 10.14.6 / Mojave）**：
@@ -71,7 +73,19 @@ x32mirror --help             # 全部命令
    ```
    之后即可直接双击。工具本身是纯标准库 Python，无需安装任何第三方包。
 
-两个平台的界面一致，共 7 个标签页：
+新界面通过 pywebview 渲染本地页面（Windows 用 WebView2，macOS 用 WKWebView），需要额外装一个可选依赖：
+
+```bash
+pip install pywebview        # 只有新界面需要；不装也能用
+```
+
+- `python -m x32mirror gui` —— 新界面（默认）
+- `python -m x32mirror gui --browser` —— 新界面改用系统浏览器打开（无 pywebview 时）
+- `python -m x32mirror gui --classic` —— 经典 tkinter 界面（纯标准库，任何环境都能跑）
+
+新界面六个页面：**运行状态**（实时同步通道可视化 + 两台调音台链路健康 + 统计磁贴）、**连接配置**、**双机热备**（角色 / Epoch / 对端状态 + 手动升主让位）、**备份恢复**（快照 / 预览 / 写台 / 云备份）、**实时日志**、**使用说明**。
+
+经典 tkinter 界面共 7 个标签页：
 
 | 标签页 | 用途 |
 |---|---|
@@ -85,7 +99,7 @@ x32mirror --help             # 全部命令
 
 GUI 启动引擎在后台线程运行，关窗口前会确认；恢复写台强制"预览 → 确认"两步，防误操作。
 
-> 注：GUI 用 Python 自带的 tkinter，Windows 官方安装的 Python 均内置；若提示 `No module named tkinter`，重装 Python 时勾选 tcl/tk 组件即可。命令行模式无此要求。
+> 注：经典 GUI（`--classic`）用 Python 自带的 tkinter，Windows 官方安装的 Python 均内置；若提示 `No module named tkinter`，重装 Python 时勾选 tcl/tk 组件即可。命令行模式无此要求。
 
 ### 方式二：命令行
 

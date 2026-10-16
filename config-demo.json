@@ -1,0 +1,42 @@
+{
+  "listen_host": "127.0.0.1",
+  "listen_port": 10099,
+  "direction": "both",
+  "echo_window_s": 1.0,
+  "renew_interval_s": 5.0,
+  "coalesce_window_s": 0.12,
+  "reconcile_interval_s": 300.0,
+  "link_timeout_s": 15.0,
+  "full_sync": true,
+  "full_sync_from": "a",
+  "oplog_db": "oplog-demo.sqlite",
+  "extra_sync_paths": [],
+  "ha": {
+    "enabled": false,
+    "node_id": "demo-pc",
+    "peer_host": "127.0.0.1",
+    "port": 49900,
+    "failover_s": 3.0,
+    "auto_resume_s": 30.0
+  },
+  "proxy": {
+    "enabled": true,
+    "max_clients": 8,
+    "client_timeout_s": 60
+  },
+  "cloud": {
+    "enabled": false,
+    "provider": "s3",
+    "endpoint": "https://s3.amazonaws.com",
+    "region": "us-east-1",
+    "bucket": "",
+    "access_key": "",
+    "secret_key": "",
+    "prefix": "x32mirror",
+    "interval_hours": 6
+  },
+  "consoles": {
+    "a": { "name": "模拟台-A", "host": "127.0.0.1", "port": 10023, "driver": "auto" },
+    "b": { "name": "模拟台-B", "host": "127.0.0.1", "port": 10024, "driver": "auto" }
+  }
+}
