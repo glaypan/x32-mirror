@@ -159,6 +159,9 @@ class EngineManager:
                 "state_paths": len(eng.state),
                 "sync_paths": detail["sync_paths"],
                 "drivers": [detail["driver_a"], detail["driver_b"]],
+                "sync_delay_s": detail.get("sync_delay_s", 0),
+                "pending_delay": detail.get("pending_delay", 0),
+                "recent_ops": detail.get("recent_ops", []),
             })
         return out
 
@@ -317,7 +320,7 @@ class WebApp:
 
                 if path == "/api/start":
                     cfg = dict(app.cfg)
-                    for k in ("listen_port", "direction", "full_sync"):
+                    for k in ("listen_port", "direction", "full_sync", "sync_delay_s"):
                         if k in body:
                             cfg[k] = body[k]
                     for side in ("a", "b"):

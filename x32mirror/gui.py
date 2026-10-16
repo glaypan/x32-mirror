@@ -289,6 +289,7 @@ class MirrorGUI(tk.Tk):
         self.var_b_drv.set(c["consoles"]["b"].get("driver", "x32"))
         self.var_listen.set(str(c.get("listen_port", 10099)))
         self.var_direction.set(c.get("direction", "both"))
+        self.var_delay.set(str(c.get("sync_delay_s", 0) or 0))
         self.var_fullsync.set(bool(c.get("full_sync", True)))
         self.var_oplog.set(c.get("oplog_db") or "")
 
@@ -299,10 +300,17 @@ class MirrorGUI(tk.Tk):
             except (TypeError, ValueError):
                 return dflt
 
+        def delay(v):
+            try:
+                return max(0.0, float(v))
+            except (TypeError, ValueError):
+                return 0.0
+
         return {
             "listen_host": "0.0.0.0",
             "listen_port": port(self.var_listen.get(), 10099),
             "direction": self.var_direction.get(),
+            "sync_delay_s": delay(self.var_delay.get()),
             "echo_window_s": 1.0,
             "renew_interval_s": 5.0,
             "coalesce_window_s": 0.12,
@@ -496,6 +504,7 @@ class MirrorGUI(tk.Tk):
         opts.pack(fill="x", pady=8)
         self.var_listen = tk.StringVar(value="10099")
         self.var_direction = tk.StringVar(value="both")
+        self.var_delay = tk.StringVar(value="0")
         self.var_fullsync = tk.BooleanVar(value=True)
         self.var_oplog = tk.StringVar(value="oplog.sqlite")
         ttk.Label(opts, text="监听端口:").grid(row=0, column=0, sticky="e", padx=(0, 6), pady=3)
@@ -503,10 +512,15 @@ class MirrorGUI(tk.Tk):
         ttk.Label(opts, text="同步方向:").grid(row=0, column=2, sticky="e", padx=(24, 6), pady=3)
         ttk.Combobox(opts, textvariable=self.var_direction, width=10, state="readonly",
                      values=["both", "a_to_b", "b_to_a"]).grid(row=0, column=3, sticky="w", pady=3)
+        ttk.Label(opts, text="同步延迟(秒):").grid(row=1, column=0, sticky="e", padx=(0, 6), pady=3)
+        ttk.Entry(opts, textvariable=self.var_delay, width=10).grid(row=1, column=1, sticky="w", pady=3)
+        ttk.Label(opts, text="0 = 实时；A 操作后延迟多少秒再同步到 B",
+                  foreground="#666666", font=("Microsoft YaHei", 8)).grid(
+            row=1, column=2, columnspan=2, sticky="w", padx=(24, 6), pady=3)
         ttk.Checkbutton(opts, text="启动时全量基线对齐 (A→B)",
-                        variable=self.var_fullsync).grid(row=1, column=0, columnspan=2, sticky="w", pady=3)
-        ttk.Label(opts, text="操作日志:").grid(row=1, column=2, sticky="e", padx=(24, 6), pady=3)
-        ttk.Entry(opts, textvariable=self.var_oplog, width=18).grid(row=1, column=3, sticky="w", pady=3)
+                        variable=self.var_fullsync).grid(row=2, column=0, columnspan=2, sticky="w", pady=3)
+        ttk.Label(opts, text="操作日志:").grid(row=2, column=2, sticky="e", padx=(24, 6), pady=3)
+        ttk.Entry(opts, textvariable=self.var_oplog, width=18).grid(row=2, column=3, sticky="w", pady=3)
 
         ttk.Button(frame, text="💾 保存配置到 config.json", command=self._save_config).pack(anchor="w")
 

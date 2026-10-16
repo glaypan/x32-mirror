@@ -14,6 +14,7 @@ import random
 import sqlite3
 import sys
 import time
+from collections import deque
 
 from .drivers import get_driver
 from .mapping import MAP_FAMILY, PairMap
@@ -115,6 +116,7 @@ class MirrorEngine(asyncio.DatagramProtocol):
         self.echo_window = float(cfg.get("echo_window_s", 1.0))
         self.renew_interval = float(cfg.get("renew_interval_s", 5.0))
         self.coalesce_window = float(cfg.get("coalesce_window_s", 0.12))
+        self.sync_delay = max(0.0, float(cfg.get("sync_delay_s", 0.0)))
         self.reconcile_interval = float(cfg.get("reconcile_interval_s", 3600.0))
         self.link_timeout = float(cfg.get("link_timeout_s", 15.0))
         self.oplog_db = cfg.get("oplog_db")
@@ -128,6 +130,10 @@ class MirrorEngine(asyncio.DatagramProtocol):
         self._fs_task = None
         self._stop = asyncio.Event()
         self.stats = {"received": 0, "forwarded": 0, "echo_suppressed": 0}
+        # delayed mirroring: (dst_name, path) -> [args, deadline, dst, src_name, orig_mono]
+        self._delayed = {}
+        self._fs_busy = False
+        self.recent_ops = deque(maxlen=60)  # live operation feed for the UI
         if self.oplog_db:
             self._init_db()
 
@@ -226,6 +232,7 @@ class MirrorEngine(asyncio.DatagramProtocol):
             asyncio.create_task(self._flush_loop()),
             asyncio.create_task(self._stat_loop()),
             asyncio.create_task(self._coalesce_loop()),
+            asyncio.create_task(self._delay_loop()),
             asyncio.create_task(self._watch_loop()),
         ]
         if self.reconcile_interval > 0:
@@ -291,6 +298,7 @@ class MirrorEngine(asyncio.DatagramProtocol):
                 self._fs_task = asyncio.create_task(self._full_sync())
         else:
             log.warning("HA: this node is now STANDBY - forwarding disabled (still logging ops)")
+            self._discard_delayed()  # pending writes must not land from a standby
 
     async def stop(self):
         self._stop.set()
@@ -304,6 +312,7 @@ class MirrorEngine(asyncio.DatagramProtocol):
             self._flush_pending()  # deliver the final coalesced values
         except Exception:  # noqa: BLE001
             pass
+        self._discard_delayed()  # delayed writes never fire after a stop
         await self._flush_ops()
         if self._db:
             self._db.close()
@@ -383,12 +392,25 @@ class MirrorEngine(asyncio.DatagramProtocol):
         else:
             out_path, out_args = address, list(args)
         for dst in targets:
-            if self.coalesce_window > 0 and len(out_args) == 1 and isinstance(out_args[0], float):
+            if self.sync_delay > 0 and not self._fs_busy:
+                self._delay_send(dst, out_path, out_args, now, src.name)
+            elif self.coalesce_window > 0 and len(out_args) == 1 and isinstance(out_args[0], float):
                 self._coalesce_send(dst, out_path, out_args, now)
             else:
                 self._dispatch(dst, out_path, out_args)
 
-    # ---- dispatch / coalescing ----------------------------------------
+    # ---- dispatch / coalescing / delay --------------------------------
+    def _record_op(self, src, path, args, dst, state, delay):
+        """Live operation feed entry (UI display only - never writes)."""
+        val = args[0] if args else None
+        if isinstance(val, float):
+            val = round(val, 4)
+        self.recent_ops.append({
+            "ts": time.strftime("%H:%M:%S"),
+            "src": src, "path": path, "val": val,
+            "dst": dst, "state": state, "delay": delay,
+        })
+
     def _dispatch(self, dst: Console, path: str, args):
         """Write to a console immediately and record it for echo suppression."""
         self._send(dst, path, args)
@@ -427,6 +449,45 @@ class MirrorEngine(asyncio.DatagramProtocol):
             now = time.monotonic()
             if any(now >= e[1] for e in self._pending.values()):
                 self._flush_pending()
+
+    # ---- delayed mirroring --------------------------------------------
+    def _delay_send(self, dst: Console, path: str, args, now: float, src_name: str):
+        """Hold a write for `sync_delay` seconds before applying it to the
+        target console (A operates -> B follows after the delay).
+
+        Trailing semantics: a newer value for the same path replaces the
+        pending one and restarts the wait, so a fader drag produces a
+        single delayed write of its final position. Echo suppression is
+        unaffected: _dispatch (and its _recent_writes entry) runs when the
+        write actually lands, so the console's echo still matches.
+        """
+        key = (dst.name, path)
+        entry = self._delayed.get(key)
+        if entry is None:
+            self._delayed[key] = [list(args), now + self.sync_delay, dst, src_name, now]
+            self.stats["delayed"] = self.stats.get("delayed", 0) + 1
+            self._record_op(src_name, path, args, dst.name, "delayed", self.sync_delay)
+        else:
+            entry[0] = list(args)
+            entry[1] = now + self.sync_delay
+            self.stats["delayed"] = self.stats.get("delayed", 0) + 1
+
+    async def _delay_loop(self):
+        while not self._stop.is_set():
+            await asyncio.sleep(0.03)
+            now = time.monotonic()
+            for key in [k for k, e in self._delayed.items() if now >= e[1]]:
+                args, _, dst, src_name, orig = self._delayed.pop(key)
+                self._dispatch(dst, key[1], args)
+                self._record_op(src_name, key[1], args, dst.name, "synced",
+                                round(now - orig, 2))
+
+    def _discard_delayed(self):
+        """Drop pending delayed writes (engine stop / role change)."""
+        n = len(self._delayed)
+        self._delayed.clear()
+        if n:
+            log.info("discarded %d pending delayed write(s)", n)
 
     # ---- remote client proxy ----------------------------------------
     def _handle_client(self, address, args, addr):
@@ -592,6 +653,7 @@ class MirrorEngine(asyncio.DatagramProtocol):
         sa, sb = self.state_by_src["a"], self.state_by_src["b"]
         now = time.monotonic()
         diff = []
+        pending_paths = {k[1] for k in self._delayed}
         for path, va in sa.items():
             vb = sb.get(path)
             if vb is None:
@@ -600,6 +662,8 @@ class MirrorEngine(asyncio.DatagramProtocol):
             tb = self.state_src_ts["b"].get(path, 0.0)
             if now - max(ta, tb) < grace:
                 continue  # recently active on either side -> may be in-flight
+            if path in pending_paths:
+                continue  # a delayed write for this path has not landed yet
             if not self._args_match(va, vb):
                 diff.append(path)
         return diff
@@ -625,6 +689,9 @@ class MirrorEngine(asyncio.DatagramProtocol):
             "latency_ms": lat,
             "clients": len(self.clients),
             "pending_coalesce": len(self._pending),
+            "pending_delay": len(self._delayed),
+            "sync_delay_s": self.sync_delay,
+            "recent_ops": list(self.recent_ops)[-24:],
             "sync_paths": len(self.sync_paths),
             "driver_a": self.drv_a.key, "driver_b": self.drv_b.key,
         }
@@ -635,6 +702,7 @@ class MirrorEngine(asyncio.DatagramProtocol):
             return
         src = self.a if self.full_sync_from == "a" else self.b
         log.info("full state sync from %s: %d paths", src.name, len(self.sync_paths))
+        self._fs_busy = True  # baseline alignment bypasses the sync delay
         try:
             for path in self.sync_paths:
                 self._send(src, path, [])  # read request; reply gets forwarded
@@ -643,6 +711,8 @@ class MirrorEngine(asyncio.DatagramProtocol):
             raise
         except Exception as exc:  # noqa: BLE001
             log.exception("full sync crashed: %s", exc)
+        finally:
+            self._fs_busy = False
 
     # ---- op-log ------------------------------------------------------
     def _init_db(self):

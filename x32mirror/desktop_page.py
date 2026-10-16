@@ -353,10 +353,19 @@ select.field{text-align:left}
           <div class="card" id="laneCard" style="margin-bottom:18px">
             <div id="laneWrap"><canvas id="lane"></canvas></div>
             <div id="laneInfo">
-              <span>同步通道 · <b id="laneDir">A ⇄ B</b></span>
+              <span>同步通道 · <b id="laneDir">A ⇄ B</b><b id="laneDelay" style="margin-left:8px;color:var(--led-warn)"></b></span>
               <span>回声抑制 <b id="laneEcho">0</b> · 合并写入 <b id="laneCoal">0</b> · 对账修复 <b id="laneRec">0</b></span>
               <span>实测延迟 <b id="laneLat">—</b></span>
             </div>
+          </div>
+
+          <div class="card" style="margin-bottom:18px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+              <b style="font-size:13px">最近同步操作</b>
+              <span class="mut" style="font-size:11px">界面仅展示同步过程，不写台</span>
+              <span class="mut" style="font-size:11px;margin-left:auto" id="opsPending"></span>
+            </div>
+            <div id="opsList" style="max-height:172px;overflow:auto;display:flex;flex-direction:column;gap:3px"></div>
           </div>
 
           <div class="grid g2" style="margin-bottom:18px">
@@ -393,6 +402,9 @@ select.field{text-align:left}
             <div class="seg" id="dirSeg">
               <button data-v="both" class="sel">双向</button><button data-v="a_to_b">A → B</button><button data-v="b_to_a">B → A</button>
             </div></span></div>
+          <div class="row"><span class="lab">同步延迟<small>A 操作后延迟多少秒再同步到 B</small></span><span class="val">
+            <input class="field mono" id="syncDelay" style="max-width:110px" inputmode="decimal" placeholder="0">
+            <span class="mut" style="font-size:11px">秒 · 0 = 实时同步</span></span></div>
           <div class="row"><span class="lab">启动时全量对齐<small>先把 A 台状态完整同步给 B 台</small></span><span class="val"><label class="sw"><input type="checkbox" id="fullSync"><i></i></label></span></div>
           <div class="row note" style="justify-content:flex-end"><span>修改后点右上角「存储」生效（重启镜像后完全生效）</span></div>
         </div>
@@ -599,17 +611,34 @@ function renderStatus(){
       </div>`;
   }
   $("laneDir").textContent=s.direction==="both"?"A ⇄ B":(s.direction==="a_to_b"?"A → B":"B → A");
+  $("laneDelay").textContent=s.sync_delay_s>0?("⏱ 延迟 "+s.sync_delay_s+"s"):"";
   $("laneEcho").textContent=st.echo_suppressed||0;
   $("laneCoal").textContent=st.coalesced||0;
   $("laneRec").textContent=st.reconciled||0;
   $("laneLat").textContent=s.latency_ms==null?"—":s.latency_ms+" ms";
 
+  // live operation feed (display only - the UI never writes to consoles)
+  const ops=(s.recent_ops||[]).slice(-18).reverse();
+  $("opsPending").textContent=s.pending_delay?`⏱ ${s.pending_delay} 个操作延迟同步中`:"";
+  $("opsList").innerHTML=ops.length?ops.map(o=>{
+    const st2=o.state==="delayed";
+    const tag=st2?`<span class="badge" style="background:color-mix(in srgb,var(--led-warn) 16%,transparent);color:var(--led-warn)">延迟中</span>`
+                 :`<span class="badge" style="background:color-mix(in srgb,var(--led-on) 14%,transparent);color:var(--led-on)">${o.delay?("延迟 "+o.delay+"s 已同步"):"已同步"}</span>`;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px solid var(--line-2);font-size:12px;animation:pageIn .3s var(--ease)">
+      <span class="mono mut" style="flex:none;font-size:11px">${o.ts}</span>
+      <b style="flex:none;color:var(--accent)">${esc(o.src)}</b>
+      <span class="mono" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(o.path)} <span class="tnum" style="color:var(--ink-2)">${o.val==null?"":esc(String(o.val))}</span></span>
+      <span class="mut" style="flex:none">→ ${esc(o.dst)}</span>
+      ${tag}</div>`;
+  }).join(""):'<div class="mut" style="font-size:12px;padding:10px 2px">暂无同步操作。启动镜像后在任意一台调音台上操作，这里会实时显示同步过程。</div>';
+
   const grid=[
     ["收到事件",st.received||0,""],["转发写入",st.forwarded||0,""],
     ["回声抑制",st.echo_suppressed||0,""],["合并写入",st.coalesced||0,""],
-    ["对账修复",st.reconciled||0,""],["链路告警",st.link_alerts||0,""],
-    ["状态路径",s.state_paths||0,""],["同步范围",s.sync_paths||0,"路"],
-    ["遥控客户端",s.clients||0,"个"],["同步延迟",s.latency_ms==null?"—":s.latency_ms,"ms"],
+    ["延迟同步",st.delayed||0,"次"],["对账修复",st.reconciled||0,""],
+    ["链路告警",st.link_alerts||0,""],["状态路径",s.state_paths||0,""],
+    ["同步范围",s.sync_paths||0,"路"],["遥控客户端",s.clients||0,"个"],
+    ["同步延迟",s.latency_ms==null?"—":s.latency_ms,"ms"],
   ];
   $("statGrid").innerHTML=grid.map(([k,v,u])=>`<div class="stat"><div class="k">${k}</div><div class="v">${v}<small> ${u}</small></div></div>`).join("");
   renderBar();
@@ -721,6 +750,7 @@ async function loadConfig(){
   $("aHost").value=c.consoles.a.host||"";$("aPort").value=c.consoles.a.port||10023;
   $("bHost").value=c.consoles.b.host||"";$("bPort").value=c.consoles.b.port||10023;
   $("listenPort").value=c.listen_port||10099;
+  $("syncDelay").value=c.sync_delay_s||0;
   $("fullSync").checked=!!c.full_sync;
   $("dirSeg").querySelectorAll("button").forEach(b=>b.classList.toggle("sel",b.dataset.v===(c.direction||"both")));
 }
@@ -729,6 +759,7 @@ function collectConfig(){
                    b:{host:$("bHost").value.trim(),port:+$("bPort").value||10023,driver:$("bDrv").value}},
           listen_port:+$("listenPort").value||10099,
           direction:$("dirSeg").querySelector(".sel").dataset.v,
+          sync_delay_s:Math.max(0,parseFloat($("syncDelay").value)||0),
           full_sync:$("fullSync").checked};
 }
 $("dirSeg").onclick=e=>{const b=e.target.closest("button");if(!b)return;
