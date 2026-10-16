@@ -162,6 +162,19 @@ async def main():
     put(PORT_A, SEL, 5)  # screen state follows in mirror mode
     ok = await wait_for(lambda: b.state.get(SEL) == 5, 3)
     check("mirror: screen state (-stat/selidx) follows", ok, f"B sel={b.state.get(SEL)}")
+
+    # the live operation feed must record immediate syncs too, not only
+    # delayed/reverted ones (regression: feed stayed empty in mirror mode)
+    await asyncio.sleep(0.6)  # let the coalesce window flush
+    ops = eng.status_dict()["recent_ops"]
+    synced = [o for o in ops if o["state"] == "synced"]
+    check("mirror: recent_ops records synced operations",
+          len(synced) >= 2 and all("src" in o and "dst" in o and "path" in o for o in synced),
+          f"synced={len(synced)} states={sorted({o['state'] for o in ops})}")
+    check("mirror: recent_ops records both directions",
+          any(o["src"] == a.name and o["dst"] == b.name for o in synced)
+          and any(o["src"] == b.name and o["dst"] == a.name for o in synced),
+          f"pairs={[(o['src'], o['dst']) for o in synced]}")
     await eng.stop()
     tr.close()
     await asyncio.sleep(0.8)

@@ -1,8 +1,11 @@
 """macOS-style desktop UI page (served at /desktop by webui.py).
 
-Design language: Apple HIG (vibrancy materials, native controls, SF type,
-dynamic light/dark, accent colors) + studio-console personality
-(LED status dots, dB readouts, a live "sync lane" packet visualizer).
+Design language: Apple HIG minimalism (vibrancy materials, SF type, dynamic
+light/dark, accent colors) with a **card workspace** as the primary
+interaction model: consoles, sync modes and quick actions are all large
+tap-target cards, so the common flows are one click away.
+
+Pages: 工作台 (card workspace) / 连接 / 热备 / 备份 / 日志 / 帮助.
 Works in any modern browser; traffic-light window buttons activate only
 inside the pywebview shell (see desktop.py).
 """
@@ -20,9 +23,8 @@ DESKTOP_PAGE = r"""<!DOCTYPE html>
 :root{
   --accent:#0a84ff; --accent-ink:#fff;
   --ease:cubic-bezier(.25,1,.5,1);      /* ease-out-quart */
-  --ease-swift:cubic-bezier(.4,0,.2,1);
-  --r-lg:14px; --r-md:10px; --r-sm:7px;
-  --sidebar-w:236px;
+  --r-lg:16px; --r-md:11px; --r-sm:8px;
+  --sidebar-w:216px;
   --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;
   --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
 }
@@ -128,10 +130,10 @@ nav button.sel svg{color:var(--accent-ink)}
 /* ---- main ---- */
 #main{display:flex;flex-direction:column;min-width:0;background:var(--mat-strong);
   -webkit-backdrop-filter:blur(36px) saturate(1.6); backdrop-filter:blur(36px) saturate(1.6);}
-#bar{display:flex;align-items:center;gap:12px;padding:14px 26px 10px;min-height:52px}
+#bar{display:flex;align-items:center;gap:12px;padding:14px 28px 10px;min-height:52px}
 #bar h1{font-size:17px;font-weight:700;letter-spacing:-.02em;margin-right:auto;display:flex;align-items:center;gap:10px}
 #bar h1 small{font-size:12px;font-weight:500;color:var(--ink-2)}
-#content{flex:1;overflow-y:auto;padding:8px 26px 30px;scrollbar-width:thin}
+#content{flex:1;overflow-y:auto;padding:6px 28px 34px;scrollbar-width:thin}
 .page{display:none;animation:pageIn .32s var(--ease)}
 .page.on{display:block}
 @keyframes pageIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
@@ -142,7 +144,6 @@ nav button.sel svg{color:var(--accent-ink)}
   border-radius:var(--r-sm);font-size:13px;font-weight:500;background:var(--card);border:1px solid var(--line);
   box-shadow:0 .5px 1.5px rgba(0,0,0,.08);transition:transform .12s var(--ease),background .15s,filter .15s;white-space:nowrap}
 .btn:hover{filter:brightness(.97)} .btn:active{transform:scale(.97);filter:brightness(.94)}
-:root[data-theme="dark"] .btn,:root:not([data-theme="light"]) .btn{}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .btn{background:var(--fill-3);border-color:var(--line);box-shadow:none}}
 .btn.primary{background:var(--accent);border-color:transparent;color:var(--accent-ink);font-weight:600;
   box-shadow:0 2px 10px color-mix(in srgb,var(--accent) 40%,transparent)}
@@ -194,75 +195,109 @@ select.field{text-align:left}
 .led.on{background:var(--led-on);box-shadow:0 0 8px color-mix(in srgb,var(--led-on) 70%,transparent);animation:ledPulse 2.4s infinite}
 .led.warn{background:var(--led-warn);box-shadow:0 0 8px color-mix(in srgb,var(--led-warn) 70%,transparent)}
 .led.err{background:var(--led-err);box-shadow:0 0 8px color-mix(in srgb,var(--led-err) 70%,transparent);animation:ledPulse 1s infinite}
+.led.big{width:11px;height:11px}
 @keyframes ledPulse{0%,100%{opacity:1}50%{opacity:.55}}
 
-/* console card (studio flavor) */
-.con{display:flex;flex-direction:column;gap:12px}
-.con .head{display:flex;align-items:center;gap:10px}
-.con .head .name{font-weight:700;font-size:14px;letter-spacing:-.01em}
-.con .head .addr{font-family:var(--mono);font-size:11.5px;color:var(--ink-3)}
-.con .badge{font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:9px;background:var(--fill);color:var(--ink-2);letter-spacing:.03em}
-.con .meters{display:flex;flex-direction:column;gap:7px}
+/* ============ card workspace (home) ============ */
+.sect{margin-bottom:26px}
+.sect>.sh{display:flex;align-items:center;gap:10px;margin:2px 2px 13px;flex-wrap:wrap}
+.sect>.sh .n{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--accent);
+  background:color-mix(in srgb,var(--accent) 12%,transparent);border-radius:6px;padding:2px 8px;letter-spacing:.04em}
+.sect>.sh .t{font-size:15px;font-weight:700;letter-spacing:-.01em}
+.sect>.sh .s{font-size:11.5px;color:var(--ink-3)}
+.sect>.sh .acts{margin-left:auto;display:flex;align-items:center;gap:8px}
+
+.badge{font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:9px;background:var(--fill);color:var(--ink-2);letter-spacing:.03em;white-space:nowrap}
+.badge.ok{background:color-mix(in srgb,var(--led-on) 16%,transparent);color:var(--led-on)}
+.badge.warn{background:color-mix(in srgb,var(--led-warn) 16%,transparent);color:var(--led-warn)}
+.badge.err{background:color-mix(in srgb,var(--led-err) 14%,transparent);color:var(--led-err)}
+
+/* console cards */
+.congrid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:980px){.congrid{grid-template-columns:1fr}}
+.concard{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow);
+  padding:18px 20px;display:flex;flex-direction:column;gap:13px;transition:opacity .25s}
+.concard.off{opacity:.72}
+.concard .head{display:flex;align-items:center;gap:10px}
+.concard .head .nm{font-weight:700;font-size:16px;letter-spacing:-.01em}
+.concard .head .badge{margin-left:auto}
+.concard .info{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-height:17px}
+.concard .addr{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2)}
+.concard .addr .field{width:128px;height:26px;font-size:12px;text-align:left}
+.concard .addr .field.sm{width:64px}
+.concard .meters{display:flex;flex-direction:column;gap:7px}
 .meter{display:grid;grid-template-columns:64px 1fr 52px;align-items:center;gap:9px;font-size:11px;color:var(--ink-2)}
 .meter .track{height:5px;border-radius:3px;background:var(--fill);overflow:hidden}
 .meter .fill{height:100%;width:0;border-radius:3px;background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 60%,#fff));
   transition:width .5s var(--ease)}
 .meter b{font-family:var(--mono);font-weight:500;text-align:right;color:var(--ink);font-variant-numeric:tabular-nums}
 
-/* stats grid */
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(128px,1fr));gap:12px}
-.stat{background:var(--card);border:1px solid var(--line);border-radius:var(--r-md);padding:11px 13px;box-shadow:var(--shadow)}
-.stat .k{font-size:11px;color:var(--ink-2);display:flex;align-items:center;gap:5px}
-.stat .v{font-family:var(--mono);font-size:19px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums;margin-top:3px}
-.stat .v small{font-size:11px;color:var(--ink-3);font-weight:400}
-.stat.hot .v{color:var(--accent)}
-
-/* ---- sync-mode page (01 connection / 02 mode) ---- */
-.sect{margin-bottom:22px}
-.sect>.sh{display:flex;align-items:center;gap:10px;margin:2px 2px 12px;flex-wrap:wrap}
-.sect>.sh .n{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--accent);
-  background:color-mix(in srgb,var(--accent) 12%,transparent);border-radius:6px;padding:2px 8px;letter-spacing:.04em}
-.sect>.sh .t{font-size:14.5px;font-weight:700;letter-spacing:-.01em}
-.sect>.sh .s{font-size:11.5px;color:var(--ink-3)}
-.sect>.sh .acts{margin-left:auto;display:flex;align-items:center;gap:8px}
-
-.concard{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow);
-  padding:13px 16px;margin-bottom:12px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;transition:opacity .25s}
-.concard.off{opacity:.72}
-.concard .id{flex:1;min-width:220px}
-.concard .id .l1{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;letter-spacing:-.01em}
-.concard .id .l2{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-top:3px;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.concard .ip{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2)}
-.concard .ip .field{width:120px;height:25px;font-size:12px;text-align:left}
-.concard .ip .field.sm{width:62px}
-
-.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+/* mode cards — the primary selection */
+.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
 @media (max-width:980px){.modes{grid-template-columns:1fr}}
 .modecard{position:relative;text-align:left;background:var(--card);border:1.5px solid var(--line);
-  border-radius:var(--r-lg);box-shadow:var(--shadow);padding:14px 15px 13px;display:flex;flex-direction:column;gap:7px;
-  transition:transform .16s var(--ease),border-color .18s,background .18s}
-.modecard:hover{transform:translateY(-1px)}
+  border-radius:var(--r-lg);box-shadow:var(--shadow);padding:18px 18px 16px;display:flex;flex-direction:column;gap:9px;
+  min-height:146px;transition:transform .16s var(--ease),border-color .18s,background .18s,box-shadow .18s}
+.modecard:hover{transform:translateY(-2px);box-shadow:0 2px 3px rgba(0,0,0,.05),0 16px 44px rgba(0,0,0,.10)}
 .modecard:active{transform:scale(.985)}
-.modecard .glyph{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ink-2);
-  background:var(--fill);border-radius:7px;padding:3px 9px;align-self:flex-start;letter-spacing:.03em}
-.modecard b{font-size:13.5px;letter-spacing:-.01em}
-.modecard small{font-size:11.5px;color:var(--ink-2);line-height:1.65}
+.modecard .glyph{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--ink-2);
+  background:var(--fill);border-radius:8px;padding:4px 11px;align-self:flex-start;letter-spacing:.04em}
+.modecard b{font-size:15px;letter-spacing:-.01em}
+.modecard small{font-size:12px;color:var(--ink-2);line-height:1.7}
 .modecard.sel{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--card))}
 .modecard.sel .glyph{background:var(--accent);color:var(--accent-ink)}
-.modecard.sel::after{content:"✓";position:absolute;top:10px;right:12px;color:var(--accent);font-weight:700;font-size:13px}
-.modenote{margin-top:12px;font-size:11.5px;color:var(--ink-3);line-height:1.75}
+.modecard.sel::after{content:"✓";position:absolute;top:12px;right:14px;color:var(--accent);font-weight:700;font-size:14px}
+.modenote{margin-top:13px;font-size:11.5px;color:var(--ink-3);line-height:1.8}
 .modenote b{color:var(--ink-2);font-weight:600}
 
-/* sync lane (signature) */
+/* quick action cards */
+.quick{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:14px}
+.qcard{display:flex;align-items:center;gap:13px;text-align:left;background:var(--card);border:1px solid var(--line);
+  border-radius:var(--r-lg);box-shadow:var(--shadow);padding:16px 18px;min-height:66px;
+  transition:transform .16s var(--ease),filter .15s,border-color .18s}
+.qcard:hover{transform:translateY(-2px)}
+.qcard:active{transform:scale(.98)}
+.qcard .qic{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;flex:none;
+  background:var(--fill);color:var(--accent)}
+.qcard b{display:block;font-size:13.5px;letter-spacing:-.01em}
+.qcard small{display:block;font-size:11px;color:var(--ink-3);margin-top:2px;line-height:1.5}
+.qcard.primary{background:var(--accent);border-color:transparent;color:var(--accent-ink)}
+.qcard.primary .qic{background:color-mix(in srgb,var(--accent-ink) 18%,transparent);color:var(--accent-ink)}
+.qcard.primary small{color:color-mix(in srgb,var(--accent-ink) 78%,transparent)}
+.qcard.danger{background:var(--led-err);border-color:transparent;color:#fff}
+.qcard.danger .qic{background:rgba(255,255,255,.2);color:#fff}
+.qcard.danger small{color:rgba(255,255,255,.78)}
+.qcard[disabled]{opacity:.45;pointer-events:none}
+
+/* live sync card (compact lane + key stats + feed) */
 #laneCard{padding:0;overflow:hidden;position:relative}
-#laneWrap{position:relative;height:118px;background:
-  radial-gradient(120% 140% at 50% -20%,color-mix(in srgb,var(--accent) 9%,transparent),transparent 60%)}
+#laneWrap{position:relative;height:86px;background:
+  radial-gradient(120% 150% at 50% -20%,color-mix(in srgb,var(--accent) 9%,transparent),transparent 60%)}
 #lane{position:absolute;inset:0;width:100%;height:100%}
-#laneInfo{position:absolute;left:14px;bottom:10px;right:14px;display:flex;justify-content:space-between;
+#laneInfo{position:absolute;left:14px;bottom:8px;right:14px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;
   font-size:11px;color:var(--ink-2);pointer-events:none}
-#laneInfo b{font-family:var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
-#spark{position:absolute;right:14px;top:12px;opacity:.9}
+#laneInfo b{font-family:var(--mono);color:var(--ink);font-variant-numeric:tabular-nums;font-weight:600}
+
+.statstrip{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin:14px 0}
+.statstrip .stat{background:var(--card);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 13px;box-shadow:var(--shadow)}
+.statstrip .k{font-size:11px;color:var(--ink-2)}
+.statstrip .v{font-family:var(--mono);font-size:18px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums;margin-top:2px}
+.statstrip .v small{font-size:11px;color:var(--ink-3);font-weight:400}
+.statstrip .stat.hot .v{color:var(--accent)}
+
+#opsCard{padding:13px 16px}
+#opsCard .oh{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+#opsCard .oh b{font-size:13px}
+#opsCard .oh .mut{font-size:11px}
+#opsList{max-height:196px;overflow:auto;display:flex;flex-direction:column;gap:2px}
+.oprow{display:flex;align-items:center;gap:9px;padding:5px 2px;border-bottom:1px solid var(--line-2);font-size:12px;animation:pageIn .3s var(--ease)}
+.oprow:last-child{border-bottom:0}
+.oprow .ts{font-family:var(--mono);flex:none;font-size:11px;color:var(--ink-3)}
+.oprow .src{flex:none;color:var(--accent);font-weight:600}
+.oprow .path{font-family:var(--mono);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.oprow .path .v{color:var(--ink-2);font-variant-numeric:tabular-nums}
+.oprow .dst{flex:none;color:var(--ink-2)}
 
 /* log console */
 #logbox{background:var(--console-bg);border-radius:var(--r-md);border:1px solid var(--line);
@@ -320,12 +355,6 @@ select.field{text-align:left}
 .iconbtn{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:var(--ink-2);transition:all .15s}
 .iconbtn:hover{background:var(--fill);color:var(--ink)}
 
-/* empty state */
-.empty{text-align:center;padding:44px 20px;color:var(--ink-2)}
-.empty .big{width:52px;height:52px;border-radius:14px;background:var(--fill);display:grid;place-items:center;margin:0 auto 14px;color:var(--accent)}
-.empty h3{font-size:15px;font-weight:700;color:var(--ink);margin-bottom:6px}
-.empty p{font-size:12.5px;max-width:380px;margin:0 auto 18px;line-height:1.7}
-
 .mono{font-family:var(--mono)}
 .mut{color:var(--ink-2)}
 .tnum{font-variant-numeric:tabular-nums}
@@ -350,13 +379,12 @@ select.field{text-align:left}
       x32-mirror
     </div>
     <nav id="nav">
-      <button data-p="status" class="sel"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-7 4 14 2.5-7H21"/></svg>运行状态</button>
-      <button data-p="mode"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 014-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 01-4 4H3"/></svg>同步模式</button>
-      <button data-p="config"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/></svg>连接配置</button>
-      <button data-p="ha"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.6-3 8.4-7 10-4-1.6-7-5.4-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>双机热备</button>
-      <button data-p="backup"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M7 9v6M12 9v6M17 9v6"/></svg>备份恢复</button>
-      <button data-p="logs"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>实时日志</button>
-      <button data-p="help"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.2 9.2a2.8 2.8 0 015.4 1c0 1.9-2.6 2.3-2.6 4"/><path d="M12 17.2h.01"/></svg>使用说明</button>
+      <button data-p="home" class="sel"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="8" height="7" rx="1.8"/><rect x="13" y="4" width="8" height="7" rx="1.8"/><rect x="3" y="13" width="8" height="7" rx="1.8"/><rect x="13" y="13" width="8" height="7" rx="1.8"/></svg>工作台</button>
+      <button data-p="config"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/></svg>连接</button>
+      <button data-p="ha"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.6-3 8.4-7 10-4-1.6-7-5.4-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>热备</button>
+      <button data-p="backup"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M7 9v6M12 9v6M17 9v6"/></svg>备份</button>
+      <button data-p="logs"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>日志</button>
+      <button data-p="help"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.2 9.2a2.8 2.8 0 015.4 1c0 1.9-2.6 2.3-2.6 4"/><path d="M12 17.2h.01"/></svg>帮助</button>
     </nav>
     <div class="spacer"></div>
     <div id="enginePill"><span class="led off" id="pillLed"></span><span id="pillText">引擎未运行</span></div>
@@ -365,7 +393,7 @@ select.field{text-align:left}
   <!-- ============ main ============ -->
   <main id="main">
     <div id="bar">
-      <h1 id="pageTitle">运行状态 <small id="pageSub"></small></h1>
+      <h1 id="pageTitle">工作台 <small id="pageSub"></small></h1>
       <button class="iconbtn" id="themeBtn" title="切换亮/暗色">
         <svg id="iconSun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4"/></svg>
         <svg id="iconMoon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" style="display:none"><path d="M20 14.5A8.5 8.5 0 019.5 4 8.5 8.5 0 1020 14.5z"/></svg>
@@ -378,72 +406,42 @@ select.field{text-align:left}
 
     <div id="content">
 
-      <!-- ===== 运行状态 ===== -->
-      <section class="page on" id="p-status">
-        <div id="runEmpty" class="card empty" style="margin-bottom:18px">
-          <div class="big"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M3 12h3l2-6 3 12 2.5-8 1.8 4H21"/></svg></div>
-          <h3>镜像引擎未运行</h3>
-          <p>启动后会自动做一次全量基线对齐（A 台当前状态同步给 B 台），之后两台调音台的任何操作都会实时互相同步。</p>
-          <button class="btn primary big" id="btnStart0"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg>启动镜像</button>
-        </div>
+      <!-- ===== 工作台：卡片式选择 + 快捷操作 ===== -->
+      <section class="page on" id="p-home">
 
-        <div id="runBody" style="display:none">
-          <div class="card" id="laneCard" style="margin-bottom:18px">
-            <div id="laneWrap"><canvas id="lane"></canvas></div>
-            <div id="laneInfo">
-              <span>同步模式 · <b id="laneMode">—</b><b id="laneDir" style="margin-left:8px"></b><b id="laneDelay" style="margin-left:8px;color:var(--led-warn)"></b></span>
-              <span>回声抑制 <b id="laneEcho">0</b> · 合并写入 <b id="laneCoal">0</b> · 对账修复 <b id="laneRec">0</b></span>
-              <span>实测延迟 <b id="laneLat">—</b></span>
-            </div>
-          </div>
-
-          <div class="card" style="margin-bottom:18px">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-              <b style="font-size:13px">最近同步操作</b>
-              <span class="mut" style="font-size:11px">界面仅展示同步过程，不写台</span>
-              <span class="mut" style="font-size:11px;margin-left:auto" id="opsPending"></span>
-            </div>
-            <div id="opsList" style="max-height:172px;overflow:auto;display:flex;flex-direction:column;gap:3px"></div>
-          </div>
-
-          <div class="grid g2" style="margin-bottom:18px">
-            <div class="card con" id="conA"></div>
-            <div class="card con" id="conB"></div>
-          </div>
-
-          <div class="stats" id="statGrid"></div>
-        </div>
-      </section>
-
-      <!-- ===== 同步模式 ===== -->
-      <section class="page" id="p-mode">
+        <!-- 01 调音台 -->
         <div class="sect">
-          <div class="sh"><span class="n">01</span><span class="t">调音台连接</span>
-            <span class="s">两台调音台的在线状态与地址</span>
-            <span class="acts">
-              <span class="badge" id="connBadge">未连接</span>
-              <button class="btn primary" id="btnConn">连接</button>
-            </span>
+          <div class="sh"><span class="n">01</span><span class="t">调音台</span>
+            <span class="s">在线状态与地址</span>
+            <span class="acts"><span class="badge" id="connBadge">未连接</span></span>
           </div>
-          <div class="concard" id="cardA">
-            <span class="led off" id="mLedA"></span>
-            <div class="id">
-              <div class="l1">A <span id="mStateA"></span></div>
-              <div class="l2" id="mInfoA">—</div>
+          <div class="congrid">
+            <div class="concard off" id="homeCardA">
+              <div class="head"><span class="led big off" id="hLedA"></span><span class="nm">A</span>
+                <span class="badge" id="hStateA">无数据</span></div>
+              <div class="info mono" id="hInfoA">—</div>
+              <div class="addr"><span>IP</span><input class="field mono" id="hIpA" placeholder="192.168.0.13"><span>端口</span><input class="field mono sm" id="hPortA" inputmode="numeric"></div>
+              <div class="meters">
+                <div class="meter"><span>最后消息</span><div class="track"><div class="fill" id="hAgeFillA" style="width:0"></div></div><b id="hAgeA">—</b></div>
+                <div class="meter"><span>链路</span><div class="track"><div class="fill" id="hLinkFillA" style="width:0"></div></div><b id="hLinkA">—</b></div>
+              </div>
             </div>
-            <div class="ip"><span>IP 地址</span><input class="field mono" id="mIpA" placeholder="192.168.0.13"><span>端口</span><input class="field mono sm" id="mPortA" inputmode="numeric"></div>
-          </div>
-          <div class="concard" id="cardB">
-            <span class="led off" id="mLedB"></span>
-            <div class="id">
-              <div class="l1">B <span id="mStateB"></span></div>
-              <div class="l2" id="mInfoB">—</div>
+            <div class="concard off" id="homeCardB">
+              <div class="head"><span class="led big off" id="hLedB"></span><span class="nm">B</span>
+                <span class="badge" id="hStateB">无数据</span></div>
+              <div class="info mono" id="hInfoB">—</div>
+              <div class="addr"><span>IP</span><input class="field mono" id="hIpB" placeholder="192.168.0.31"><span>端口</span><input class="field mono sm" id="hPortB" inputmode="numeric"></div>
+              <div class="meters">
+                <div class="meter"><span>最后消息</span><div class="track"><div class="fill" id="hAgeFillB" style="width:0"></div></div><b id="hAgeB">—</b></div>
+                <div class="meter"><span>链路</span><div class="track"><div class="fill" id="hLinkFillB" style="width:0"></div></div><b id="hLinkB">—</b></div>
+              </div>
             </div>
-            <div class="ip"><span>IP 地址</span><input class="field mono" id="mIpB" placeholder="192.168.0.31"><span>端口</span><input class="field mono sm" id="mPortB" inputmode="numeric"></div>
           </div>
         </div>
+
+        <!-- 02 同步模式 -->
         <div class="sect">
-          <div class="sh"><span class="n">02</span><span class="t">选择同步模式</span><span class="s">主机</span>
+          <div class="sh"><span class="n">02</span><span class="t">同步模式</span><span class="s">主机</span>
             <span class="acts">
               <div class="seg" id="masterSeg">
                 <button data-v="a" class="sel">以 A 为主</button><button data-v="b">以 B 为主</button>
@@ -456,7 +454,7 @@ select.field{text-align:left}
               <small>主台操作，备台跟随。备台误操作后自动回弹。</small>
             </button>
             <button class="modecard" data-m="mirror">
-              <span class="glyph">A ≠ B</span><b>双控台全镜像</b>
+              <span class="glyph">A ⇄ B</span><b>双控台全镜像</b>
               <small>双侧双向同步，支持的屏幕状态一起跟随。</small>
             </button>
             <button class="modecard" data-m="independent">
@@ -466,6 +464,34 @@ select.field{text-align:left}
           </div>
           <p class="modenote">切换前会先把<b>主机</b>的当前状态完整对齐到另一台，对齐期间请勿操作调音台。单控台模式下备台误操作约 <b>0.5 秒</b>后自动回弹到主机状态；两台同时操作时以主机为准。未连接时修改模式，将在下次启动镜像后生效。</p>
         </div>
+
+        <!-- 03 快捷操作 -->
+        <div class="sect">
+          <div class="sh"><span class="n">03</span><span class="t">快捷操作</span></div>
+          <div class="quick" id="quickRow"></div>
+        </div>
+
+        <!-- 04 实时同步（运行中显示） -->
+        <div class="sect" id="liveSect" style="display:none">
+          <div class="sh"><span class="n">04</span><span class="t">实时同步</span>
+            <span class="s">界面仅展示同步过程，不写台</span>
+            <span class="acts" id="opsPending"></span>
+          </div>
+          <div class="card" id="laneCard">
+            <div id="laneWrap"><canvas id="lane"></canvas></div>
+            <div id="laneInfo">
+              <span>同步模式 · <b id="laneMode">—</b><b id="laneDir" style="margin-left:8px"></b><b id="laneDelay" style="margin-left:8px;color:var(--led-warn)"></b></span>
+              <span>回声抑制 <b id="laneEcho">0</b> · 合并写入 <b id="laneCoal">0</b> · 对账修复 <b id="laneRec">0</b></span>
+              <span>实测延迟 <b id="laneLat">—</b></span>
+            </div>
+          </div>
+          <div class="statstrip" id="statStrip"></div>
+          <div class="card" id="opsCard">
+            <div class="oh"><b>最近同步操作</b><span class="mut">界面仅展示，不写台</span></div>
+            <div id="opsList"></div>
+          </div>
+        </div>
+
       </section>
 
       <!-- ===== 连接配置 ===== -->
@@ -608,7 +634,7 @@ const API={
 };
 const ACCENTS={blue:"#0a84ff",purple:"#bf5af2",pink:"#ff375f",red:"#ff453a",orange:"#ff9f0a",yellow:"#e0b400",green:"#30d158",graphite:"#8e8e93"};
 const ACCENT_INK={yellow:"#3a2f00",graphite:"#fff"};
-let state={page:"status",theme:"auto",accent:"blue",running:false,status:null,ha:null,mode:null,prev:null,latHist:[],dots:[],logSeq:0,logLv:"all",logBuf:[],docs:null};
+let state={page:"home",theme:"auto",accent:"blue",running:false,status:null,ha:null,mode:null,prev:null,latHist:[],dots:[],logSeq:0,logLv:"all",logBuf:[],docs:null};
 const MODE_LABEL={single:"单控台",mirror:"双控台全镜像",independent:"双控台显示独立"};
 
 /* ---------------- theme / accent ---------------- */
@@ -637,25 +663,35 @@ $("themeSeg").onclick=e=>{const b=e.target.closest("button");if(!b)return;
 matchMedia("(prefers-color-scheme:dark)").addEventListener("change",applyTheme);
 
 /* ---------------- nav ---------------- */
-const TITLES={status:["运行状态","实时镜像与链路健康"],mode:["同步模式","连接调音台并选择同步方式"],config:["连接配置","调音台地址与同步选项"],ha:["双机热备","主备选举与手动切换"],backup:["备份恢复","快照与云备份"],logs:["实时日志","引擎运行日志"],help:["使用说明","操作指南与注意事项"]};
+const TITLES={home:["工作台",""],config:["连接","调音台地址与同步选项"],ha:["热备","主备选举与手动切换"],backup:["备份","快照与云备份"],logs:["日志","引擎运行日志"],help:["帮助","操作指南与注意事项"]};
 function goto(p){
   state.page=p;
   document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("sel",b.dataset.p===p));
   document.querySelectorAll(".page").forEach(s=>s.classList.toggle("on",s.id==="p-"+p));
   $("pageTitle").firstChild.textContent=TITLES[p][0]+" ";
-  $("pageSub").textContent=TITLES[p][1];
+  $("pageSub").textContent=p==="home"?"":TITLES[p][1];
   renderBar();
   if(p==="logs")pollLogs(true);
   if(p==="config")loadConfig();
-  if(p==="mode")loadMode();
   if(p==="backup")loadSnaps();
   if(p==="ha")loadHA();
   if(p==="help")loadDocs();
+  if(p==="home")renderHome();
 }
 $("nav").onclick=e=>{const b=e.target.closest("button");if(b)goto(b.dataset.p)};
 function renderBar(){
   const a=$("barActions");a.innerHTML="";
-  if(state.page==="status"){
+  if(state.page==="config"){
+    const b=document.createElement("button");b.className="btn primary big";b.textContent="存储";
+    b.onclick=saveConfig;a.appendChild(b);
+  }
+  if(state.page==="ha"){
+    const b=document.createElement("button");b.className="btn big";b.textContent="刷新状态";
+    b.onclick=()=>{poll(true)};a.appendChild(b);
+  }
+  if(state.page==="home"){
+    // the workspace keeps the primary action in the quick-action row;
+    // the bar only mirrors it while other pages are open
     if(state.running){
       const b=document.createElement("button");b.className="btn danger big";b.id="btnStop";
       b.innerHTML='<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>停止镜像';
@@ -666,17 +702,9 @@ function renderBar(){
       b.onclick=startEngine;a.appendChild(b);
     }
   }
-  if(state.page==="config"){
-    const b=document.createElement("button");b.className="btn primary big";b.textContent="存储";
-    b.onclick=saveConfig;a.appendChild(b);
-  }
-  if(state.page==="ha"){
-    const b=document.createElement("button");b.className="btn big";b.textContent="刷新状态";
-    b.onclick=()=>{poll(true)};a.appendChild(b);
-  }
 }
 
-/* ---------------- status page ---------------- */
+/* ---------------- workspace (home) ---------------- */
 function fmtAge(a){return a==null?"无数据":(a<3?"● 在线":(a<15?"● 迟缓":"○ 失联"))}
 function ledClass(c){return c.alert||!c.online?(c.online?"warn":"err"):(c.last_seen_age_s!=null&&c.last_seen_age_s<3?"on":"off")}
 function renderPill(s){
@@ -685,26 +713,94 @@ function renderPill(s){
   else if(!s.running){pl.className="led off";pt.textContent=s.error?"引擎启动出错":"引擎未运行";}
   else{pl.className="led "+(s.active?"on":"warn");pt.textContent=(s.role||"")+(s.active?" · 转发中":" · 只记录");}
 }
-function renderStatus(){
+function renderHome(){
   const s=state.status;
-  $("runEmpty").style.display=state.running?"none":"block";
-  $("runBody").style.display=state.running?"block":"none";
   renderPill(s);
-  if(!s||!s.running){renderBar();return;}
+  $("liveSect").style.display=state.running?"block":"none";
 
-  const st=s.stats||{};
-  const [ca,cb]=s.consoles;
-  for(const [el,c] of [[$("conA"),ca],[$("conB"),cb]]){
-    const age=c.last_seen_age_s!=null?c.last_seen_age_s:c.age_s;
-    const led=ledClass(Object.assign({},c,{last_seen_age_s:age}));
-    el.innerHTML=`<div class="head"><span class="led ${led}"></span><span class="name">${c.name}</span>
-      <span class="badge">${c.online?"在线":"失联"}</span>
-      <span class="addr" style="margin-left:auto">${c.host}:${c.port}</span></div>
-      <div class="meters">
-        <div class="meter"><span>最后消息</span><div class="track"><div class="fill" style="width:${age==null?0:Math.max(2,100-Math.min(100,age*7))}%"></div></div><b>${age==null?"—":age+"s"}</b></div>
-        <div class="meter"><span>链路</span><div class="track"><div class="fill" style="width:${c.online?100:(c.alert?25:0)}%"></div></div><b>${fmtAge(age)}</b></div>
-      </div>`;
+  // ---- console cards ----
+  const badge=$("connBadge");
+  badge.textContent=state.running?"连接成功":"未连接";
+  badge.className="badge "+(state.running?"ok":"");
+  const cons=(s&&s.consoles)||[];
+  const xi=(s&&s.xinfo)||{};
+  const drv=(s&&s.drivers)||[];
+  [["A","hLedA","hStateA","hInfoA","hIpA","hPortA","hAgeFillA","hAgeA","hLinkFillA","hLinkA",0,"a","homeCardA"],
+   ["B","hLedB","hStateB","hInfoB","hIpB","hPortB","hAgeFillB","hAgeB","hLinkFillB","hLinkB",1,"b","homeCardB"]]
+   .forEach(([tag,led,st,info,ip,port,af,av,lf,lv,i,xk,card])=>{
+    const c=cons[i];
+    const on=!!(c&&c.online);
+    $(led).className="led big "+(on?"on":(c&&c.alert?"err":"off"));
+    $(st).textContent=on?"在线":(c&&c.age_s!=null?"失联":"无数据");
+    $(st).className="badge "+(on?"ok":(c&&c.alert?"err":""));
+    const args=xi&&xi[xk];
+    $(info).textContent=(args&&args.length?args.join(" · "):"—")+(drv[i]?("  ["+drv[i]+"]"):"");
+    if(document.activeElement!==$(ip))$(ip).value=c?c.host:"";
+    if(document.activeElement!==$(port))$(port).value=c?c.port:"";
+    $(card).classList.toggle("off",!on&&!!c);
+    const age=c?(c.last_seen_age_s!=null?c.last_seen_age_s:c.age_s):null;
+    $(af).style.width=age==null?0:Math.max(2,100-Math.min(100,age*7))+"%";
+    $(av).textContent=age==null?"—":age+"s";
+    $(lf).style.width=(c&&c.online)?100:((c&&c.alert)?25:0)+"%";
+    $(lv).textContent=fmtAge(age);
+  });
+
+  // ---- mode cards + master seg ----
+  const m=state.mode||{};
+  $("masterSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("sel",x.dataset.v===(m.master||"a")));
+  document.querySelectorAll("#modeCards .modecard").forEach(x=>x.classList.toggle("sel",x.dataset.m===(m.sync_mode||"mirror")));
+
+  // ---- quick action cards ----
+  const q=$("quickRow");
+  const snapDisabled=state.running?"":"disabled";
+  if(state.running){
+    q.innerHTML=`
+      <button class="qcard danger" id="qStop">
+        <span class="qic"><svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></span>
+        <span><b>停止镜像</b><small>断开同步链路，两台各自运行</small></span></button>
+      <button class="qcard" id="qSnap" ${snapDisabled}>
+        <span class="qic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5A2.5 2.5 0 016.5 6h1.2l1.1-1.8h6.4L16.3 6h1.2A2.5 2.5 0 0120 8.5v8A2.5 2.5 0 0117.5 19h-11A2.5 2.5 0 014 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></svg></span>
+        <span><b>拍摄快照</b><small>保存 A 台当前全部状态</small></span></button>
+      <button class="qcard" id="qLogs">
+        <span class="qic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg></span>
+        <span><b>实时日志</b><small>查看引擎运行日志</small></span></button>`;
+  }else{
+    q.innerHTML=`
+      <button class="qcard primary" id="qStart">
+        <span class="qic"><svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg></span>
+        <span><b>启动镜像</b><small>先做全量基线对齐，之后实时互同步</small></span></button>
+      <button class="qcard" id="qSnap" ${snapDisabled}>
+        <span class="qic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5A2.5 2.5 0 016.5 6h1.2l1.1-1.8h6.4L16.3 6h1.2A2.5 2.5 0 0120 8.5v8A2.5 2.5 0 0117.5 19h-11A2.5 2.5 0 014 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></svg></span>
+        <span><b>拍摄快照</b><small>需先启动镜像</small></span></button>
+      <button class="qcard" id="qLogs">
+        <span class="qic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg></span>
+        <span><b>实时日志</b><small>查看引擎运行日志</small></span></button>`;
   }
+  $("qStart")&&($("qStart").onclick=startEngine);
+  $("qStop")&&($("qStop").onclick=stopEngine);
+  $("qSnap")&&($("qSnap").onclick=async()=>{
+    $("qSnap").disabled=true;
+    const r=await API.post("/api/snapshot");
+    toast(r.ok?`快照已保存：${r.file}（${r.paths} 个参数）`:"拍摄失败："+(r.error||""),r.ok?"ok":"err");
+    $("qSnap").disabled=false;
+  });
+  $("qLogs")&&($("qLogs").onclick=()=>goto("logs"));
+
+  // ---- bar title carries the live mode summary ----
+  if(state.running&&s){
+    const ml=MODE_LABEL[s.sync_mode]||s.sync_mode||"—";
+    const dir=s.direction==="both"?"A ⇄ B":(s.direction==="a_to_b"?"A → B":"B → A");
+    const mast=s.sync_mode==="single"?(" · "+((s.master||"a").toUpperCase())+" 为主"):"";
+    $("pageSub").textContent=ml+mast+" · "+dir+(s.latency_ms!=null?(" · "+s.latency_ms+" ms"):"");
+  }else{
+    $("pageSub").textContent="";
+  }
+  renderBar();
+
+  if(!s||!s.running)return;
+
+  // ---- live sync ----
+  const st=s.stats||{};
   $("laneMode").textContent=(MODE_LABEL[s.sync_mode]||s.sync_mode||"—")+
     (s.sync_mode==="single"?(" · "+((s.master||"a").toUpperCase())+" 为主"):"");
   $("laneDir").textContent=s.direction==="both"?"A ⇄ B":(s.direction==="a_to_b"?"A → B":"B → A");
@@ -715,32 +811,29 @@ function renderStatus(){
   $("laneLat").textContent=s.latency_ms==null?"—":s.latency_ms+" ms";
 
   // live operation feed (display only - the UI never writes to consoles)
-  const ops=(s.recent_ops||[]).slice(-18).reverse();
-  $("opsPending").textContent=s.pending_delay?`⏱ ${s.pending_delay} 个操作延迟同步中`:
-    (s.pending_revert?`↩ ${s.pending_revert} 个误操作回弹中`:"");
+  const ops=(s.recent_ops||[]).slice(-7).reverse();
+  $("opsPending").innerHTML=s.pending_delay?`<span class="badge warn">⏱ ${s.pending_delay} 个操作延迟同步中</span>`:
+    (s.pending_revert?`<span class="badge warn">↩ ${s.pending_revert} 个误操作回弹中</span>`:"");
   $("opsList").innerHTML=ops.length?ops.map(o=>{
-    const tag=o.state==="delayed"?`<span class="badge" style="background:color-mix(in srgb,var(--led-warn) 16%,transparent);color:var(--led-warn)">延迟中</span>`
-                 :o.state==="reverting"?`<span class="badge" style="background:color-mix(in srgb,var(--led-warn) 16%,transparent);color:var(--led-warn)">回弹中</span>`
-                 :o.state==="reverted"?`<span class="badge" style="background:color-mix(in srgb,var(--led-on) 14%,transparent);color:var(--led-on)">已回弹</span>`
-                 :`<span class="badge" style="background:color-mix(in srgb,var(--led-on) 14%,transparent);color:var(--led-on)">${o.delay?("延迟 "+o.delay+"s 已同步"):"已同步"}</span>`;
-    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px solid var(--line-2);font-size:12px;animation:pageIn .3s var(--ease)">
-      <span class="mono mut" style="flex:none;font-size:11px">${o.ts}</span>
-      <b style="flex:none;color:var(--accent)">${esc(o.src)}</b>
-      <span class="mono" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(o.path)} <span class="tnum" style="color:var(--ink-2)">${o.val==null?"":esc(String(o.val))}</span></span>
-      <span class="mut" style="flex:none">→ ${esc(o.dst)}</span>
+    const tag=o.state==="delayed"?`<span class="badge warn">延迟中</span>`
+             :o.state==="reverting"?`<span class="badge warn">回弹中</span>`
+             :o.state==="reverted"?`<span class="badge ok">已回弹</span>`
+             :`<span class="badge ok">${o.delay?("延迟 "+o.delay+"s 已同步"):"已同步"}</span>`;
+    return `<div class="oprow">
+      <span class="ts">${o.ts}</span>
+      <b class="src">${esc(o.src)}</b>
+      <span class="path">${esc(o.path)} <span class="v">${o.val==null?"":esc(String(o.val))}</span></span>
+      <span class="dst">→ ${esc(o.dst)}</span>
       ${tag}</div>`;
-  }).join(""):'<div class="mut" style="font-size:12px;padding:10px 2px">暂无同步操作。启动镜像后在任意一台调音台上操作，这里会实时显示同步过程。</div>';
+  }).join(""):'<div class="mut" style="font-size:12px;padding:10px 2px">暂无同步操作。在任意一台调音台上操作，这里会实时显示同步过程。</div>';
 
+  // key numbers only — keep the workspace minimal
   const grid=[
-    ["收到事件",st.received||0,""],["转发写入",st.forwarded||0,""],
-    ["回声抑制",st.echo_suppressed||0,""],["合并写入",st.coalesced||0,""],
-    ["延迟同步",st.delayed||0,"次"],["误操作回弹",st.reverts||0,"次"],["对账修复",st.reconciled||0,""],
-    ["链路告警",st.link_alerts||0,""],["状态路径",s.state_paths||0,""],
-    ["同步范围",s.sync_paths||0,"路"],["遥控客户端",s.clients||0,"个"],
-    ["同步延迟",s.latency_ms==null?"—":s.latency_ms,"ms"],
+    ["转发写入",st.forwarded||0,"","hot"],["回声抑制",st.echo_suppressed||0,"",""],
+    ["收到事件",st.received||0,"",""],["误操作回弹",st.reverts||0,"次",""],
+    ["实测延迟",s.latency_ms==null?"—":s.latency_ms,"ms",""],
   ];
-  $("statGrid").innerHTML=grid.map(([k,v,u])=>`<div class="stat"><div class="k">${k}</div><div class="v">${v}<small> ${u}</small></div></div>`).join("");
-  renderBar();
+  $("statStrip").innerHTML=grid.map(([k,v,u,hot])=>`<div class="stat ${hot}"><div class="k">${k}</div><div class="v">${v}<small> ${u}</small></div></div>`).join("");
 
   // feed the sync lane
   const p=state.prev||{};
@@ -760,20 +853,21 @@ let laneT=0;
 function spawnDot(kind,delay){
   const fromA=Math.random()<.5;
   state.dots.push({kind,fromA,delay:delay*14+Math.random()*10,
-    y:34+Math.random()*50,speed:1.6+Math.random()*1.2,born:laneT});
+    y:26+Math.random()*36,speed:1.6+Math.random()*1.2,born:laneT});
   if(state.dots.length>240)state.dots.splice(0,60);
 }
 function drawLane(ts){
   if(!laneT)laneT=ts;
   const dt=Math.min(50,ts-laneT);laneT=ts;
   const w=lane.clientWidth,h=lane.clientHeight,dpr=devicePixelRatio||1;
+  if(!w||!h){requestAnimationFrame(drawLane);return;}
   if(lane.width!==w*dpr){lane.width=w*dpr;lane.height=h*dpr;}
   lctx.setTransform(dpr,0,0,dpr,0,0);
   lctx.clearRect(0,0,w,h);
   const s=state.status;
   const onlineA=s&&s.consoles?s.consoles[0].online:false;
   const onlineB=s&&s.consoles?s.consoles[1].online:false;
-  const ax=64,bx=w-64,cy=h/2;
+  const ax=58,bx=w-58,cy=h/2;
   const css=getComputedStyle(document.documentElement);
   const accent=css.getPropertyValue("--accent").trim()||"#0a84ff";
   const ink3=css.getPropertyValue("--ink-3").trim()||"#999";
@@ -785,9 +879,9 @@ function drawLane(ts){
 
   // endpoints
   const drawNode=(x,label,on)=>{
-    lctx.beginPath();lctx.arc(x,cy,17,0,7);
+    lctx.beginPath();lctx.arc(x,cy,15,0,7);
     lctx.fillStyle=on?ledOn:ink3;lctx.globalAlpha=on?.9:.35;lctx.fill();lctx.globalAlpha=1;
-    lctx.fillStyle="#fff";lctx.font="700 11px "+getComputedStyle(document.body).fontFamily;
+    lctx.fillStyle="#fff";lctx.font="700 10px "+getComputedStyle(document.body).fontFamily;
     lctx.textAlign="center";lctx.textBaseline="middle";lctx.fillText(label,x,cy+1);
   };
   drawNode(ax,"A",onlineA);drawNode(bx,"B",onlineB);
@@ -796,7 +890,7 @@ function drawLane(ts){
   state.dots=state.dots.filter(d=>{
     d.delay-=dt;if(d.delay>0)return true;
     d.x=(d.fromA?ax:bx)+(d.fromA?1:-1)*((ts-d.born-d.delay)*0.32*d.speed);
-    if(Math.abs(d.x-(d.fromA?bx:ax))<24)return false;
+    if(Math.abs(d.x-(d.fromA?bx:ax))<22)return false;
     const col=d.kind==="fwd"?accent:(d.kind==="echo"?ink3:"#fff");
     lctx.globalAlpha=d.kind==="echo"?.35:.95;
     lctx.fillStyle=col;
@@ -809,7 +903,7 @@ function drawLane(ts){
   // latency sparkline
   const hist=state.latHist;
   if(hist.length>1){
-    const sw=92,sh=26,sx=w-sw-16,sy=14;
+    const sw=80,sh=22,sx=w-sw-14,sy=10;
     lctx.strokeStyle=accent;lctx.lineWidth=1.4;lctx.beginPath();
     const mx=Math.max(...hist,10);
     hist.forEach((v,i)=>{
@@ -837,7 +931,6 @@ async function stopEngine(){
       await API.post("/api/stop");toast("镜像已停止");poll(true);}}
   ],"stop");
 }
-$("btnStart0").onclick=startEngine;
 
 /* ---------------- config page ---------------- */
 let cfgCache=null;
@@ -885,58 +978,13 @@ async function detect(side){
   else toast("未识别到调音台（"+host+"）","err");
 }
 
-/* ---------------- sync mode page (01 connect / 02 mode) ---------------- */
+/* ---------------- sync mode selection (cards) ---------------- */
 async function loadMode(){
   try{
     state.mode=await API.get("/api/mode");
   }catch(e){}
-  renderModePage(state.status);
 }
-function renderModePage(s){
-  const run=!!(s&&s.running);
-  const badge=$("connBadge");
-  badge.textContent=run?"连接成功":"未连接";
-  badge.style.background=run?"color-mix(in srgb, var(--led-on) 18%, transparent)":"var(--fill)";
-  badge.style.color=run?"var(--led-on)":"var(--ink-2)";
-  const b=$("btnConn");
-  b.textContent=run?"断开连接":"连接";
-  b.className=run?"btn":"btn primary";
-  const cons=(s&&s.consoles)||[];
-  const xi=(s&&s.xinfo)||{};
-  [["A","mLedA","mStateA","mInfoA","mIpA","mPortA",0,"a"],
-   ["B","mLedB","mStateB","mInfoB","mIpB","mPortB",1,"b"]].forEach(([tag,led,st,info,ip,port,i,xk])=>{
-    const c=cons[i];
-    const on=!!(c&&c.online);
-    $(led).className="led "+(on?"on":(c&&c.alert?"err":"off"));
-    $(st).innerHTML=on
-      ?'<span class="badge" style="background:color-mix(in srgb,var(--led-on) 16%,transparent);color:var(--led-on)">在线</span>'
-      :`<span class="badge">${c&&c.age_s!=null?"失联":"无数据"}</span>`;
-    const drv=(s&&s.drivers&&s.drivers[i])||"";
-    const args=xi&&xi[xk];
-    $(info).textContent=(args&&args.length?args.join(" · "):"—")+(drv?("  ["+drv+"]"):"");
-    if(document.activeElement!==$(ip))$(ip).value=c?c.host:"";
-    if(document.activeElement!==$(port))$(port).value=c?c.port:"";
-    $("card"+tag).classList.toggle("off",!on&&!!c);
-  });
-  const m=state.mode||{};
-  $("masterSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("sel",x.dataset.v===(m.master||"a")));
-  document.querySelectorAll("#modeCards .modecard").forEach(x=>x.classList.toggle("sel",x.dataset.m===(m.sync_mode||"mirror")));
-}
-$("btnConn").onclick=()=>{state.running?stopEngine():startEngine()};
-[["A","mIpA","mPortA","host"],["B","mIpB","mPortB","host"]].forEach(([tag,ip,port])=>{
-  $(ip).onchange=async()=>{
-    const side=tag.toLowerCase();
-    const body={consoles:{[side]:{host:$(ip).value.trim()}}};
-    const r=await API.post("/api/config",body);
-    toast(r.ok?(`${tag} 台 IP 已保存（重启镜像后生效）`):"保存失败",r.ok?"ok":"err");
-  };
-  $(port).onchange=async()=>{
-    const side=tag.toLowerCase();
-    const r=await API.post("/api/config",{consoles:{[side]:{port:+$(port).value||10023}}});
-    toast(r.ok?(`${tag} 台端口已保存（重启镜像后生效）`):"保存失败",r.ok?"ok":"err");
-  };
-});
-async function applyMode(mode,master){
+function applyMode(mode,master){
   const cur=state.mode||{};
   if(mode===cur.sync_mode&&master===cur.master)return;
   const apply=async()=>{
@@ -954,13 +1002,27 @@ async function applyMode(mode,master){
       [{t:"取消",cls:"btn"},{t:"确认切换",cls:"btn primary",fn:apply}],
       "arrow.triangle.2.circlepath");
   }else{
-    await apply();
+    apply();
   }
 }
 $("modeCards").onclick=e=>{const b=e.target.closest(".modecard");if(!b)return;
   applyMode(b.dataset.m,(state.mode||{}).master||"a")};
 $("masterSeg").onclick=e=>{const b=e.target.closest("button");if(!b)return;
   applyMode((state.mode||{}).sync_mode||"mirror",b.dataset.v)};
+
+/* console card IP/port inline edit (workspace) */
+[["A","hIpA","hPortA"],["B","hIpB","hPortB"]].forEach(([tag,ip,port])=>{
+  $(ip).onchange=async()=>{
+    const side=tag.toLowerCase();
+    const r=await API.post("/api/config",{consoles:{[side]:{host:$(ip).value.trim()}}});
+    toast(r.ok?(`${tag} 台 IP 已保存（重启镜像后生效）`):"保存失败",r.ok?"ok":"err");
+  };
+  $(port).onchange=async()=>{
+    const side=tag.toLowerCase();
+    const r=await API.post("/api/config",{consoles:{[side]:{port:+$(port).value||10023}}});
+    toast(r.ok?(`${tag} 台端口已保存（重启镜像后生效）`):"保存失败",r.ok?"ok":"err");
+  };
+});
 
 /* ---------------- HA page ---------------- */
 async function loadHA(){
@@ -1068,7 +1130,7 @@ $("logChips").onclick=e=>{
   $("logChips").querySelectorAll(".chip[data-lv]").forEach(x=>x.classList.toggle("sel",x===c));
   state.logLv=c.dataset.lv;pollLogs(true);
 };
-function esc(s){return s.replace(/[&<>]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[m]))}
+function esc(s){return String(s).replace(/[&<>]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[m]))}
 
 /* ---------------- docs ---------------- */
 async function loadDocs(){
@@ -1126,12 +1188,12 @@ async function poll(force){
   try{
     const [s,h]=await Promise.all([API.get("/api/status"),API.get("/api/ha")]);
     state.status=s;state.ha=h;
-    state.running=!!(s&&s.running);  // global: pages other than status need it too
+    state.running=!!(s&&s.running);  // global: pages other than home need it too
     renderPill(s);
   }catch(e){state.status=null;}
-  if(state.page==="status")renderStatus();
+  if(state.page==="home")renderHome();
   if(state.page==="ha")renderHA();
-  if(state.page==="mode")renderModePage(state.status);
+  if(state.page==="config"&&state.running!==undefined){} // config page is static once loaded
 }
 setInterval(poll,900);
 // preload the config cache so 启动镜像 works from any page

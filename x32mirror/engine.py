@@ -488,9 +488,10 @@ class MirrorEngine(asyncio.DatagramProtocol):
             if self.sync_delay > 0 and not self._fs_busy:
                 self._delay_send(dst, out_path, out_args, now, src.name)
             elif self.coalesce_window > 0 and len(out_args) == 1 and isinstance(out_args[0], float):
-                self._coalesce_send(dst, out_path, out_args, now)
+                self._coalesce_send(dst, out_path, out_args, now, src.name)
             else:
                 self._dispatch(dst, out_path, out_args)
+                self._record_op(src.name, out_path, out_args, dst.name, "synced", 0)
 
     # ---- dispatch / coalescing / delay --------------------------------
     def _record_op(self, src, path, args, dst, state, delay):
@@ -511,7 +512,7 @@ class MirrorEngine(asyncio.DatagramProtocol):
         self.stats["forwarded"] += 1
         log.debug("-> %s %s %r", dst.name, path, args)
 
-    def _coalesce_send(self, dst: Console, path: str, args, now: float):
+    def _coalesce_send(self, dst: Console, path: str, args, now: float, src_name: str):
         """Fader-style continuous streams: first value goes out at once
         (zero added latency), later values within the window collapse to a
         single trailing write of the latest value."""
@@ -519,7 +520,8 @@ class MirrorEngine(asyncio.DatagramProtocol):
         entry = self._pending.get(key)
         if entry is None:
             self._dispatch(dst, path, args)
-            self._pending[key] = [list(args), now + self.coalesce_window, dst, list(args)]
+            self._record_op(src_name, path, args, dst.name, "synced", 0)
+            self._pending[key] = [list(args), now + self.coalesce_window, dst, list(args), src_name]
         else:
             entry[0] = list(args)
             entry[1] = now + self.coalesce_window
@@ -532,9 +534,10 @@ class MirrorEngine(asyncio.DatagramProtocol):
             entry = self._pending.pop((dname, path), None)
             if not entry:
                 continue
-            args, _, dst, sent = entry
+            args, _, dst, sent, src_name = entry
             if args and not self._args_match(sent, args):
                 self._dispatch(dst, path, args)
+                self._record_op(src_name, path, args, dst.name, "synced", 0)
 
     async def _coalesce_loop(self):
         while not self._stop.is_set():
@@ -648,7 +651,7 @@ class MirrorEngine(asyncio.DatagramProtocol):
                 return
             now = time.monotonic()
             if self.coalesce_window > 0 and len(args) == 1 and isinstance(args[0], float):
-                self._coalesce_send(self.a, address, list(args), now)
+                self._coalesce_send(self.a, address, list(args), now, "遥控")
             else:
                 self._send(self.a, address, list(args))
                 self._recent_writes.append((now, self.a.host, address, list(args)))
@@ -657,7 +660,7 @@ class MirrorEngine(asyncio.DatagramProtocol):
             if translated is not None:
                 out_path, out_args = translated
                 if self.coalesce_window > 0 and len(out_args) == 1 and isinstance(out_args[0], float):
-                    self._coalesce_send(self.b, out_path, list(out_args), now)
+                    self._coalesce_send(self.b, out_path, list(out_args), now, "遥控")
                 else:
                     self._send(self.b, out_path, list(out_args))
                     self._recent_writes.append((now, self.b.host, out_path, list(out_args)))
