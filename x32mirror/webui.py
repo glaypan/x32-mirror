@@ -148,6 +148,9 @@ class EngineManager:
                 "ha": eng.ha is not None,
                 "listen_port": self.running_cfg.get("listen_port") if self.running_cfg else None,
                 "direction": eng.direction,
+                "sync_mode": eng.sync_mode,
+                "master": eng.master,
+                "xinfo": eng.xinfo,
                 "stats": detail["stats"],
                 "latency_ms": detail["latency_ms"],
                 "clients": len(eng.clients),
@@ -161,9 +164,29 @@ class EngineManager:
                 "drivers": [detail["driver_a"], detail["driver_b"]],
                 "sync_delay_s": detail.get("sync_delay_s", 0),
                 "pending_delay": detail.get("pending_delay", 0),
+                "pending_revert": detail.get("pending_revert", 0),
                 "recent_ops": detail.get("recent_ops", []),
             })
         return out
+
+    # -- sync mode (single / mirror / independent) ----------------------
+    async def _set_mode(self, mode: str, master: str):
+        eng = self.engine
+        if eng is None:
+            return {"ok": False, "error": "引擎未运行"}
+        return eng.set_mode(mode, master)
+
+    def set_mode(self, mode: str, master: str) -> dict:
+        """Switch sync mode at runtime; False when the engine is not running
+        (the caller then persists the choice to the config file instead)."""
+        with self._lock:
+            if self.engine is None:
+                return {"ok": False, "not_running": True}
+            fut = asyncio.run_coroutine_threadsafe(self._set_mode(mode, master), self.loop)
+            try:
+                return fut.result(timeout=10)
+            except Exception as exc:  # noqa: BLE001
+                return {"ok": False, "error": str(exc)}
 
     def ha_info(self) -> dict:
         """HA role/epoch/peer snapshot for the UI (empty when disabled)."""
@@ -241,7 +264,19 @@ class WebApp:
     # ---- config helpers (phone can edit console IPs) -----------------
     def _save_cfg(self, new_cfg: dict):
         keep = dict(self.cfg)
-        keep.update(new_cfg)
+        for k, v in new_cfg.items():
+            if k == "consoles" and isinstance(v, dict):
+                # deep-merge: a partial console update must not drop the
+                # other side's settings or the untouched fields
+                cons = dict(keep.get("consoles") or {})
+                for side, cc in v.items():
+                    if isinstance(cc, dict):
+                        cons[side] = {**cons.get(side, {}), **cc}
+                    else:
+                        cons[side] = cc
+                keep["consoles"] = cons
+            else:
+                keep[k] = v
         self.cfg = keep
         with open(self.config_path, "w", encoding="utf-8") as fh:
             json.dump(self.cfg, fh, indent=2, ensure_ascii=False)
@@ -307,6 +342,25 @@ class WebApp:
                     self._json({"usage": HELP_USAGE, "caution": HELP_CAUTION, "faq": HELP_FAQ})
                 elif path == "/api/ha":
                     self._json(app.mgr.ha_info())
+                elif path == "/api/mode":
+                    eng = app.mgr.engine
+                    if eng is None:
+                        c = app.cfg
+                        self._json({
+                            "running": False,
+                            "sync_mode": c.get("sync_mode", "mirror"),
+                            "master": c.get("master", "a"),
+                            "direction": c.get("direction", "both"),
+                            "revert_delay_s": c.get("revert_delay_s", 0.5),
+                        })
+                    else:
+                        self._json({
+                            "running": True,
+                            "sync_mode": eng.sync_mode,
+                            "master": eng.master,
+                            "direction": eng.direction,
+                            "revert_delay_s": eng.revert_delay,
+                        })
                 else:
                     self._json({"error": "not found"}, 404)
 
@@ -320,7 +374,8 @@ class WebApp:
 
                 if path == "/api/start":
                     cfg = dict(app.cfg)
-                    for k in ("listen_port", "direction", "full_sync", "sync_delay_s"):
+                    for k in ("listen_port", "direction", "full_sync", "sync_delay_s",
+                              "sync_mode", "master", "revert_delay_s"):
                         if k in body:
                             cfg[k] = body[k]
                     for side in ("a", "b"):
@@ -359,6 +414,23 @@ class WebApp:
                                              "确认本节点已启用双机热备并正在运行。"})
                     else:
                         self._json({"ok": True, "ack": ack})
+                elif path == "/api/mode":
+                    mode = str(body.get("mode") or "").strip()
+                    master = str(body.get("master") or "").strip()
+                    if mode not in ("single", "mirror", "independent"):
+                        self._json({"ok": False, "error": f"未知同步模式: {mode!r}"})
+                    elif master not in ("a", "b"):
+                        self._json({"ok": False, "error": f"未知主机: {master!r}"})
+                    else:
+                        r = app.mgr.set_mode(mode, master)
+                        if r.get("not_running"):
+                            # not running: persist the choice, it applies on
+                            # the next start
+                            app._save_cfg({"sync_mode": mode, "master": master})
+                            self._json({"ok": True, "saved": True,
+                                        "sync_mode": mode, "master": master})
+                        else:
+                            self._json(r)
                 else:
                     self._json({"error": "not found"}, 404)
 
@@ -453,6 +525,8 @@ nav button.on{color:#2b5fd9}
   <div class="card"><h3>运行选项</h3>
     <div class="row"><div><label>监听端口(遥控软件用)</label><input id="listen" inputmode="numeric"></div>
     <div><label>同步方向</label><select id="direction"><option>both</option><option>a_to_b</option><option>b_to_a</option></select></div></div>
+    <div class="row"><div><label>同步模式</label><select id="syncmode"><option value="mirror">全镜像</option><option value="single">单控台</option><option value="independent">显示独立</option></select></div>
+    <div><label>主机</label><select id="master"><option value="a">A</option><option value="b">B</option></select></div></div>
     <button id="btnCfg">💾 保存配置</button>
   </div>
 </div>
@@ -509,6 +583,7 @@ async function pollStatus(){
   if(s.running){
    const c=s.consoles;
    h=`<div class="kv"><span>角色</span><b class="badge ${s.active?'g':'y'}">${s.role}${s.active?' (转发中)':' (只记录)'}</b></div>
+      <div class="kv"><span>同步模式</span><span>${({single:'单控台',mirror:'全镜像',independent:'显示独立'})[s.sync_mode]||s.sync_mode} · 主机 ${(s.master||'a').toUpperCase()}</span></div>
       <div class="kv"><span>调音台 A</span><span>${c[0].host}:${c[0].port} ${age(c[0].age_s)}</span></div>
       <div class="kv"><span>调音台 B</span><span>${c[1].host}:${c[1].port} ${age(c[1].age_s)}</span></div>
       <div class="kv"><span>方向 / 遥控端</span><span>${s.direction} / ${s.clients} 个在线</span></div>
@@ -543,11 +618,13 @@ async function loadConfig(){
  $('a_host').value=c.consoles.a.host||'';$('a_port').value=c.consoles.a.port||10023;
  $('b_host').value=c.consoles.b.host||'';$('b_port').value=c.consoles.b.port||10023;
  $('listen').value=c.listen_port||10099;$('direction').value=c.direction||'both';
+ $('syncmode').value=c.sync_mode||'mirror';$('master').value=c.master||'a';
 }
 $('btnCfg').onclick=async()=>{
  const body={consoles:{a:{host:$('a_host').value.trim(),port:+$('a_port').value||10023,driver:$('a_drv').value},
                           b:{host:$('b_host').value.trim(),port:+$('b_port').value||10023,driver:$('b_drv').value}},
-             listen_port:+$('listen').value||10099,direction:$('direction').value};
+             listen_port:+$('listen').value||10099,direction:$('direction').value,
+             sync_mode:$('syncmode').value,master:$('master').value};
  const r=await jpost('/api/config',body);alert(r.ok?'配置已保存':'保存失败：'+r.error);
 };
 

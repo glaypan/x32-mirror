@@ -217,6 +217,43 @@ select.field{text-align:left}
 .stat .v small{font-size:11px;color:var(--ink-3);font-weight:400}
 .stat.hot .v{color:var(--accent)}
 
+/* ---- sync-mode page (01 connection / 02 mode) ---- */
+.sect{margin-bottom:22px}
+.sect>.sh{display:flex;align-items:center;gap:10px;margin:2px 2px 12px;flex-wrap:wrap}
+.sect>.sh .n{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--accent);
+  background:color-mix(in srgb,var(--accent) 12%,transparent);border-radius:6px;padding:2px 8px;letter-spacing:.04em}
+.sect>.sh .t{font-size:14.5px;font-weight:700;letter-spacing:-.01em}
+.sect>.sh .s{font-size:11.5px;color:var(--ink-3)}
+.sect>.sh .acts{margin-left:auto;display:flex;align-items:center;gap:8px}
+
+.concard{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow);
+  padding:13px 16px;margin-bottom:12px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;transition:opacity .25s}
+.concard.off{opacity:.72}
+.concard .id{flex:1;min-width:220px}
+.concard .id .l1{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;letter-spacing:-.01em}
+.concard .id .l2{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-top:3px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.concard .ip{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2)}
+.concard .ip .field{width:120px;height:25px;font-size:12px;text-align:left}
+.concard .ip .field.sm{width:62px}
+
+.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+@media (max-width:980px){.modes{grid-template-columns:1fr}}
+.modecard{position:relative;text-align:left;background:var(--card);border:1.5px solid var(--line);
+  border-radius:var(--r-lg);box-shadow:var(--shadow);padding:14px 15px 13px;display:flex;flex-direction:column;gap:7px;
+  transition:transform .16s var(--ease),border-color .18s,background .18s}
+.modecard:hover{transform:translateY(-1px)}
+.modecard:active{transform:scale(.985)}
+.modecard .glyph{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ink-2);
+  background:var(--fill);border-radius:7px;padding:3px 9px;align-self:flex-start;letter-spacing:.03em}
+.modecard b{font-size:13.5px;letter-spacing:-.01em}
+.modecard small{font-size:11.5px;color:var(--ink-2);line-height:1.65}
+.modecard.sel{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--card))}
+.modecard.sel .glyph{background:var(--accent);color:var(--accent-ink)}
+.modecard.sel::after{content:"✓";position:absolute;top:10px;right:12px;color:var(--accent);font-weight:700;font-size:13px}
+.modenote{margin-top:12px;font-size:11.5px;color:var(--ink-3);line-height:1.75}
+.modenote b{color:var(--ink-2);font-weight:600}
+
 /* sync lane (signature) */
 #laneCard{padding:0;overflow:hidden;position:relative}
 #laneWrap{position:relative;height:118px;background:
@@ -314,6 +351,7 @@ select.field{text-align:left}
     </div>
     <nav id="nav">
       <button data-p="status" class="sel"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-7 4 14 2.5-7H21"/></svg>运行状态</button>
+      <button data-p="mode"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11v-1a4 4 0 014-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v1a4 4 0 01-4 4H3"/></svg>同步模式</button>
       <button data-p="config"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/></svg>连接配置</button>
       <button data-p="ha"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.6-3 8.4-7 10-4-1.6-7-5.4-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>双机热备</button>
       <button data-p="backup"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M7 9v6M12 9v6M17 9v6"/></svg>备份恢复</button>
@@ -353,7 +391,7 @@ select.field{text-align:left}
           <div class="card" id="laneCard" style="margin-bottom:18px">
             <div id="laneWrap"><canvas id="lane"></canvas></div>
             <div id="laneInfo">
-              <span>同步通道 · <b id="laneDir">A ⇄ B</b><b id="laneDelay" style="margin-left:8px;color:var(--led-warn)"></b></span>
+              <span>同步模式 · <b id="laneMode">—</b><b id="laneDir" style="margin-left:8px"></b><b id="laneDelay" style="margin-left:8px;color:var(--led-warn)"></b></span>
               <span>回声抑制 <b id="laneEcho">0</b> · 合并写入 <b id="laneCoal">0</b> · 对账修复 <b id="laneRec">0</b></span>
               <span>实测延迟 <b id="laneLat">—</b></span>
             </div>
@@ -374,6 +412,59 @@ select.field{text-align:left}
           </div>
 
           <div class="stats" id="statGrid"></div>
+        </div>
+      </section>
+
+      <!-- ===== 同步模式 ===== -->
+      <section class="page" id="p-mode">
+        <div class="sect">
+          <div class="sh"><span class="n">01</span><span class="t">调音台连接</span>
+            <span class="s">两台调音台的在线状态与地址</span>
+            <span class="acts">
+              <span class="badge" id="connBadge">未连接</span>
+              <button class="btn primary" id="btnConn">连接</button>
+            </span>
+          </div>
+          <div class="concard" id="cardA">
+            <span class="led off" id="mLedA"></span>
+            <div class="id">
+              <div class="l1">A <span id="mStateA"></span></div>
+              <div class="l2" id="mInfoA">—</div>
+            </div>
+            <div class="ip"><span>IP 地址</span><input class="field mono" id="mIpA" placeholder="192.168.0.13"><span>端口</span><input class="field mono sm" id="mPortA" inputmode="numeric"></div>
+          </div>
+          <div class="concard" id="cardB">
+            <span class="led off" id="mLedB"></span>
+            <div class="id">
+              <div class="l1">B <span id="mStateB"></span></div>
+              <div class="l2" id="mInfoB">—</div>
+            </div>
+            <div class="ip"><span>IP 地址</span><input class="field mono" id="mIpB" placeholder="192.168.0.31"><span>端口</span><input class="field mono sm" id="mPortB" inputmode="numeric"></div>
+          </div>
+        </div>
+        <div class="sect">
+          <div class="sh"><span class="n">02</span><span class="t">选择同步模式</span><span class="s">主机</span>
+            <span class="acts">
+              <div class="seg" id="masterSeg">
+                <button data-v="a" class="sel">以 A 为主</button><button data-v="b">以 B 为主</button>
+              </div>
+            </span>
+          </div>
+          <div class="modes" id="modeCards">
+            <button class="modecard" data-m="single">
+              <span class="glyph">A → B</span><b>单控台</b>
+              <small>主台操作，备台跟随。备台误操作后自动回弹。</small>
+            </button>
+            <button class="modecard" data-m="mirror">
+              <span class="glyph">A ≠ B</span><b>双控台全镜像</b>
+              <small>双侧双向同步，支持的屏幕状态一起跟随。</small>
+            </button>
+            <button class="modecard" data-m="independent">
+              <span class="glyph">A · B</span><b>双控台显示独立</b>
+              <small>双侧双向同步，两边屏幕各自操作。</small>
+            </button>
+          </div>
+          <p class="modenote">切换前会先把<b>主机</b>的当前状态完整对齐到另一台，对齐期间请勿操作调音台。单控台模式下备台误操作约 <b>0.5 秒</b>后自动回弹到主机状态；两台同时操作时以主机为准。未连接时修改模式，将在下次启动镜像后生效。</p>
         </div>
       </section>
 
@@ -517,7 +608,8 @@ const API={
 };
 const ACCENTS={blue:"#0a84ff",purple:"#bf5af2",pink:"#ff375f",red:"#ff453a",orange:"#ff9f0a",yellow:"#e0b400",green:"#30d158",graphite:"#8e8e93"};
 const ACCENT_INK={yellow:"#3a2f00",graphite:"#fff"};
-let state={page:"status",theme:"auto",accent:"blue",running:false,status:null,ha:null,prev:null,latHist:[],dots:[],logSeq:0,logLv:"all",logBuf:[],docs:null};
+let state={page:"status",theme:"auto",accent:"blue",running:false,status:null,ha:null,mode:null,prev:null,latHist:[],dots:[],logSeq:0,logLv:"all",logBuf:[],docs:null};
+const MODE_LABEL={single:"单控台",mirror:"双控台全镜像",independent:"双控台显示独立"};
 
 /* ---------------- theme / accent ---------------- */
 function applyTheme(){
@@ -545,7 +637,7 @@ $("themeSeg").onclick=e=>{const b=e.target.closest("button");if(!b)return;
 matchMedia("(prefers-color-scheme:dark)").addEventListener("change",applyTheme);
 
 /* ---------------- nav ---------------- */
-const TITLES={status:["运行状态","实时镜像与链路健康"],config:["连接配置","调音台地址与同步选项"],ha:["双机热备","主备选举与手动切换"],backup:["备份恢复","快照与云备份"],logs:["实时日志","引擎运行日志"],help:["使用说明","操作指南与注意事项"]};
+const TITLES={status:["运行状态","实时镜像与链路健康"],mode:["同步模式","连接调音台并选择同步方式"],config:["连接配置","调音台地址与同步选项"],ha:["双机热备","主备选举与手动切换"],backup:["备份恢复","快照与云备份"],logs:["实时日志","引擎运行日志"],help:["使用说明","操作指南与注意事项"]};
 function goto(p){
   state.page=p;
   document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("sel",b.dataset.p===p));
@@ -555,6 +647,7 @@ function goto(p){
   renderBar();
   if(p==="logs")pollLogs(true);
   if(p==="config")loadConfig();
+  if(p==="mode")loadMode();
   if(p==="backup")loadSnaps();
   if(p==="ha")loadHA();
   if(p==="help")loadDocs();
@@ -586,15 +679,17 @@ function renderBar(){
 /* ---------------- status page ---------------- */
 function fmtAge(a){return a==null?"无数据":(a<3?"● 在线":(a<15?"● 迟缓":"○ 失联"))}
 function ledClass(c){return c.alert||!c.online?(c.online?"warn":"err"):(c.last_seen_age_s!=null&&c.last_seen_age_s<3?"on":"off")}
-function renderStatus(){
-  const s=state.status;
-  state.running=!!(s&&s.running);
-  $("runEmpty").style.display=state.running?"none":"block";
-  $("runBody").style.display=state.running?"block":"none";
+function renderPill(s){
   const pl=$("pillLed"),pt=$("pillText");
   if(!s){pl.className="led off";pt.textContent="引擎未运行";}
   else if(!s.running){pl.className="led off";pt.textContent=s.error?"引擎启动出错":"引擎未运行";}
   else{pl.className="led "+(s.active?"on":"warn");pt.textContent=(s.role||"")+(s.active?" · 转发中":" · 只记录");}
+}
+function renderStatus(){
+  const s=state.status;
+  $("runEmpty").style.display=state.running?"none":"block";
+  $("runBody").style.display=state.running?"block":"none";
+  renderPill(s);
   if(!s||!s.running){renderBar();return;}
 
   const st=s.stats||{};
@@ -610,6 +705,8 @@ function renderStatus(){
         <div class="meter"><span>链路</span><div class="track"><div class="fill" style="width:${c.online?100:(c.alert?25:0)}%"></div></div><b>${fmtAge(age)}</b></div>
       </div>`;
   }
+  $("laneMode").textContent=(MODE_LABEL[s.sync_mode]||s.sync_mode||"—")+
+    (s.sync_mode==="single"?(" · "+((s.master||"a").toUpperCase())+" 为主"):"");
   $("laneDir").textContent=s.direction==="both"?"A ⇄ B":(s.direction==="a_to_b"?"A → B":"B → A");
   $("laneDelay").textContent=s.sync_delay_s>0?("⏱ 延迟 "+s.sync_delay_s+"s"):"";
   $("laneEcho").textContent=st.echo_suppressed||0;
@@ -619,10 +716,12 @@ function renderStatus(){
 
   // live operation feed (display only - the UI never writes to consoles)
   const ops=(s.recent_ops||[]).slice(-18).reverse();
-  $("opsPending").textContent=s.pending_delay?`⏱ ${s.pending_delay} 个操作延迟同步中`:"";
+  $("opsPending").textContent=s.pending_delay?`⏱ ${s.pending_delay} 个操作延迟同步中`:
+    (s.pending_revert?`↩ ${s.pending_revert} 个误操作回弹中`:"");
   $("opsList").innerHTML=ops.length?ops.map(o=>{
-    const st2=o.state==="delayed";
-    const tag=st2?`<span class="badge" style="background:color-mix(in srgb,var(--led-warn) 16%,transparent);color:var(--led-warn)">延迟中</span>`
+    const tag=o.state==="delayed"?`<span class="badge" style="background:color-mix(in srgb,var(--led-warn) 16%,transparent);color:var(--led-warn)">延迟中</span>`
+                 :o.state==="reverting"?`<span class="badge" style="background:color-mix(in srgb,var(--led-warn) 16%,transparent);color:var(--led-warn)">回弹中</span>`
+                 :o.state==="reverted"?`<span class="badge" style="background:color-mix(in srgb,var(--led-on) 14%,transparent);color:var(--led-on)">已回弹</span>`
                  :`<span class="badge" style="background:color-mix(in srgb,var(--led-on) 14%,transparent);color:var(--led-on)">${o.delay?("延迟 "+o.delay+"s 已同步"):"已同步"}</span>`;
     return `<div style="display:flex;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px solid var(--line-2);font-size:12px;animation:pageIn .3s var(--ease)">
       <span class="mono mut" style="flex:none;font-size:11px">${o.ts}</span>
@@ -635,7 +734,7 @@ function renderStatus(){
   const grid=[
     ["收到事件",st.received||0,""],["转发写入",st.forwarded||0,""],
     ["回声抑制",st.echo_suppressed||0,""],["合并写入",st.coalesced||0,""],
-    ["延迟同步",st.delayed||0,"次"],["对账修复",st.reconciled||0,""],
+    ["延迟同步",st.delayed||0,"次"],["误操作回弹",st.reverts||0,"次"],["对账修复",st.reconciled||0,""],
     ["链路告警",st.link_alerts||0,""],["状态路径",s.state_paths||0,""],
     ["同步范围",s.sync_paths||0,"路"],["遥控客户端",s.clients||0,"个"],
     ["同步延迟",s.latency_ms==null?"—":s.latency_ms,"ms"],
@@ -755,12 +854,20 @@ async function loadConfig(){
   $("dirSeg").querySelectorAll("button").forEach(b=>b.classList.toggle("sel",b.dataset.v===(c.direction||"both")));
 }
 function collectConfig(){
-  return {consoles:{a:{host:$("aHost").value.trim(),port:+$("aPort").value||10023,driver:$("aDrv").value},
-                   b:{host:$("bHost").value.trim(),port:+$("bPort").value||10023,driver:$("bDrv").value}},
-          listen_port:+$("listenPort").value||10099,
-          direction:$("dirSeg").querySelector(".sel").dataset.v,
+  // fall back to the cached config so the start button works even when the
+  // config page was never visited (its inputs would still be empty)
+  const c=cfgCache||{consoles:{a:{},b:{}}};
+  const a=(c.consoles&&c.consoles.a)||{}, b=(c.consoles&&c.consoles.b)||{};
+  const host=(id,fb)=>$(id).value.trim()||fb||"";
+  const segSel=id=>{const s=$(id).querySelector(".sel");return s?s.dataset.v:null};
+  return {consoles:{a:{host:host("aHost",a.host),port:+$("aPort").value||a.port||10023,driver:$("aDrv").value||a.driver||"auto"},
+                   b:{host:host("bHost",b.host),port:+$("bPort").value||b.port||10023,driver:$("bDrv").value||b.driver||"auto"}},
+          listen_port:+$("listenPort").value||c.listen_port||10099,
+          direction:segSel("dirSeg")||c.direction||"both",
           sync_delay_s:Math.max(0,parseFloat($("syncDelay").value)||0),
-          full_sync:$("fullSync").checked};
+          full_sync:$("fullSync").checked,
+          sync_mode:(state.mode&&state.mode.sync_mode)||c.sync_mode||"mirror",
+          master:(state.mode&&state.mode.master)||c.master||"a"};
 }
 $("dirSeg").onclick=e=>{const b=e.target.closest("button");if(!b)return;
   $("dirSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("sel",x===b))};
@@ -777,6 +884,83 @@ async function detect(side){
   if(d.driver){$(side+"Drv").value=d.driver;toast(`识别到 ${d.model}，驱动已设为 ${d.driver}`);}
   else toast("未识别到调音台（"+host+"）","err");
 }
+
+/* ---------------- sync mode page (01 connect / 02 mode) ---------------- */
+async function loadMode(){
+  try{
+    state.mode=await API.get("/api/mode");
+  }catch(e){}
+  renderModePage(state.status);
+}
+function renderModePage(s){
+  const run=!!(s&&s.running);
+  const badge=$("connBadge");
+  badge.textContent=run?"连接成功":"未连接";
+  badge.style.background=run?"color-mix(in srgb, var(--led-on) 18%, transparent)":"var(--fill)";
+  badge.style.color=run?"var(--led-on)":"var(--ink-2)";
+  const b=$("btnConn");
+  b.textContent=run?"断开连接":"连接";
+  b.className=run?"btn":"btn primary";
+  const cons=(s&&s.consoles)||[];
+  const xi=(s&&s.xinfo)||{};
+  [["A","mLedA","mStateA","mInfoA","mIpA","mPortA",0,"a"],
+   ["B","mLedB","mStateB","mInfoB","mIpB","mPortB",1,"b"]].forEach(([tag,led,st,info,ip,port,i,xk])=>{
+    const c=cons[i];
+    const on=!!(c&&c.online);
+    $(led).className="led "+(on?"on":(c&&c.alert?"err":"off"));
+    $(st).innerHTML=on
+      ?'<span class="badge" style="background:color-mix(in srgb,var(--led-on) 16%,transparent);color:var(--led-on)">在线</span>'
+      :`<span class="badge">${c&&c.age_s!=null?"失联":"无数据"}</span>`;
+    const drv=(s&&s.drivers&&s.drivers[i])||"";
+    const args=xi&&xi[xk];
+    $(info).textContent=(args&&args.length?args.join(" · "):"—")+(drv?("  ["+drv+"]"):"");
+    if(document.activeElement!==$(ip))$(ip).value=c?c.host:"";
+    if(document.activeElement!==$(port))$(port).value=c?c.port:"";
+    $("card"+tag).classList.toggle("off",!on&&!!c);
+  });
+  const m=state.mode||{};
+  $("masterSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("sel",x.dataset.v===(m.master||"a")));
+  document.querySelectorAll("#modeCards .modecard").forEach(x=>x.classList.toggle("sel",x.dataset.m===(m.sync_mode||"mirror")));
+}
+$("btnConn").onclick=()=>{state.running?stopEngine():startEngine()};
+[["A","mIpA","mPortA","host"],["B","mIpB","mPortB","host"]].forEach(([tag,ip,port])=>{
+  $(ip).onchange=async()=>{
+    const side=tag.toLowerCase();
+    const body={consoles:{[side]:{host:$(ip).value.trim()}}};
+    const r=await API.post("/api/config",body);
+    toast(r.ok?(`${tag} 台 IP 已保存（重启镜像后生效）`):"保存失败",r.ok?"ok":"err");
+  };
+  $(port).onchange=async()=>{
+    const side=tag.toLowerCase();
+    const r=await API.post("/api/config",{consoles:{[side]:{port:+$(port).value||10023}}});
+    toast(r.ok?(`${tag} 台端口已保存（重启镜像后生效）`):"保存失败",r.ok?"ok":"err");
+  };
+});
+async function applyMode(mode,master){
+  const cur=state.mode||{};
+  if(mode===cur.sync_mode&&master===cur.master)return;
+  const apply=async()=>{
+    const r=await API.post("/api/mode",{mode,master});
+    if(!r.ok){toast("切换失败："+(r.error||""),"err");return;}
+    state.mode=Object.assign({},cur,{sync_mode:mode,master:master,direction:r.direction});
+    if(r.saved)toast("模式已保存，启动镜像后生效");
+    else if(r.realigned)toast("模式已切换，正在对齐主机状态…");
+    else toast("模式已切换");
+    poll(true);
+  };
+  if(state.running){
+    sheet("切换同步模式",
+      `将先把「${master==="a"?"A 主机":"B 主机"}」的当前状态完整对齐到另一台调音台，对齐期间请勿操作调音台。确认切换？`,
+      [{t:"取消",cls:"btn"},{t:"确认切换",cls:"btn primary",fn:apply}],
+      "arrow.triangle.2.circlepath");
+  }else{
+    await apply();
+  }
+}
+$("modeCards").onclick=e=>{const b=e.target.closest(".modecard");if(!b)return;
+  applyMode(b.dataset.m,(state.mode||{}).master||"a")};
+$("masterSeg").onclick=e=>{const b=e.target.closest("button");if(!b)return;
+  applyMode((state.mode||{}).sync_mode||"mirror",b.dataset.v)};
 
 /* ---------------- HA page ---------------- */
 async function loadHA(){
@@ -942,11 +1126,16 @@ async function poll(force){
   try{
     const [s,h]=await Promise.all([API.get("/api/status"),API.get("/api/ha")]);
     state.status=s;state.ha=h;
+    state.running=!!(s&&s.running);  // global: pages other than status need it too
+    renderPill(s);
   }catch(e){state.status=null;}
   if(state.page==="status")renderStatus();
   if(state.page==="ha")renderHA();
+  if(state.page==="mode")renderModePage(state.status);
 }
 setInterval(poll,900);
+// preload the config cache so 启动镜像 works from any page
+API.get("/api/config").then(d=>{cfgCache=d.config;}).catch(()=>{});
 poll(true);
 </script>
 </body>

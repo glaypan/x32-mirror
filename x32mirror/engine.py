@@ -24,6 +24,24 @@ log = logging.getLogger("x32mirror")
 
 MGMT_PATHS = {"/xinfo", "/renew", "/status", "/ping"}
 
+# ---- sync modes ------------------------------------------------------
+# single      one desk drives: master -> slave only; the slave springs
+#             back to the master's value when someone touches it
+# mirror      bidirectional, everything follows (default, classic mirror)
+# independent bidirectional AUDIO, but screen/UI state stays local on
+#             each console (channel select, solo switches, screen pages)
+SYNC_MODES = ("single", "mirror", "independent")
+
+# UI/screen state paths (X32/WING "-stat/" family): followed in mirror
+# mode, kept local in independent mode.
+SCREEN_PATH_PREFIXES = ("-stat/selidx", "-stat/solosw", "-stat/screen",
+                        "-stat/page", "-stat/usb", "/solo/")
+
+
+def is_screen_path(path: str) -> bool:
+    """True for display/UI state (selected channel, solo switches, ...)."""
+    return path.startswith(SCREEN_PATH_PREFIXES)
+
 
 def harden_udp_socket(transport):
     """Windows: stop WSAECONNRESET from poisoning UDP sockets.
@@ -122,6 +140,27 @@ class MirrorEngine(asyncio.DatagramProtocol):
         self.oplog_db = cfg.get("oplog_db")
         self.full_sync = bool(cfg.get("full_sync", False))
 
+        # ---- sync mode: single / mirror / independent ------------------
+        # legacy configs carry only "direction"; derive the mode from it
+        if "sync_mode" in cfg:
+            self.sync_mode = cfg.get("sync_mode") or "mirror"
+        else:
+            self.sync_mode = ("single" if cfg.get("direction") in ("a_to_b", "b_to_a")
+                              else "mirror")
+        if self.sync_mode not in SYNC_MODES:
+            log.warning("unknown sync_mode %r, falling back to mirror", self.sync_mode)
+            self.sync_mode = "mirror"
+        self.master = cfg.get("master") or ("b" if cfg.get("direction") == "b_to_a" else "a")
+        if self.master not in ("a", "b"):
+            self.master = "a"
+        self.revert_delay = max(0.05, float(cfg.get("revert_delay_s", 0.5)))
+        self.direction = "both"
+        self._derive_direction()
+        # single mode: (slave_name, path) -> [deadline_mono, slave_console]
+        self._revert = {}
+        # last /xinfo reply per console (model / firmware / serial, for UI)
+        self.xinfo = {"a": None, "b": None}
+
         self.transport = None
         self._recent_writes = []  # (mono_ts, host, path, args)
         self._opbuf = []
@@ -191,6 +230,49 @@ class MirrorEngine(asyncio.DatagramProtocol):
             if p not in self.sync_paths:
                 self.sync_paths.append(p)
 
+    def _derive_direction(self):
+        """Sync direction + baseline source follow the mode and the master.
+
+        single      -> one-way from the master; the slave's own touches are
+                       reverted (auto spring-back)
+        mirror      -> fully bidirectional (everything follows)
+        independent -> bidirectional audio, screen state stays local
+        """
+        if self.sync_mode == "single":
+            self.direction = "a_to_b" if self.master == "a" else "b_to_a"
+        else:
+            self.direction = "both"
+        self.full_sync_from = self.master  # baseline always comes from the master
+
+    def set_mode(self, mode: str, master: str, realign: bool = True) -> dict:
+        """Switch sync mode / master at runtime (called from the web UI).
+
+        The master's state is re-aligned to the other console first, exactly
+        like the reference UX: fix the A->B alignment, do not touch the desks
+        while it runs. Returns the new mode summary.
+        """
+        if mode not in SYNC_MODES:
+            raise ValueError(f"unknown sync_mode: {mode!r}")
+        if master not in ("a", "b"):
+            raise ValueError(f"unknown master: {master!r}")
+        changed = mode != self.sync_mode or master != self.master
+        self.sync_mode = mode
+        self.master = master
+        self._derive_direction()
+        self._rebuild_topology()
+        self._discard_delayed()
+        self._revert.clear()  # pending spring-backs belong to the old mode
+        realigned = False
+        if realign and changed and self.full_sync and self.active:
+            if self._fs_task is None or self._fs_task.done():
+                self._fs_task = asyncio.create_task(self._full_sync())
+                realigned = True
+        log.warning("sync mode -> %s (master=%s, direction=%s)%s",
+                    mode, master, self.direction,
+                    " - re-aligning master state" if realigned else "")
+        return {"ok": True, "sync_mode": self.sync_mode, "master": self.master,
+                "direction": self.direction, "realigned": realigned}
+
     async def _autodetect(self):
         """Resolve driver:'auto' consoles by probing them over the wire."""
         from .drivers import detect_console
@@ -233,6 +315,7 @@ class MirrorEngine(asyncio.DatagramProtocol):
             asyncio.create_task(self._stat_loop()),
             asyncio.create_task(self._coalesce_loop()),
             asyncio.create_task(self._delay_loop()),
+            asyncio.create_task(self._revert_loop()),
             asyncio.create_task(self._watch_loop()),
         ]
         if self.reconcile_interval > 0:
@@ -299,6 +382,7 @@ class MirrorEngine(asyncio.DatagramProtocol):
         else:
             log.warning("HA: this node is now STANDBY - forwarding disabled (still logging ops)")
             self._discard_delayed()  # pending writes must not land from a standby
+            self._revert.clear()     # nor spring-backs
 
     async def stop(self):
         self._stop.set()
@@ -313,6 +397,7 @@ class MirrorEngine(asyncio.DatagramProtocol):
         except Exception:  # noqa: BLE001
             pass
         self._discard_delayed()  # delayed writes never fire after a stop
+        self._revert.clear()     # neither do spring-backs
         await self._flush_ops()
         if self._db:
             self._db.close()
@@ -346,6 +431,9 @@ class MirrorEngine(asyncio.DatagramProtocol):
             return
         src.last_seen = time.time()
         if address in MGMT_PATHS:
+            if address == "/xinfo" and args:
+                # model / firmware / serial for the UI console cards
+                self.xinfo["a" if src is self.a else "b"] = list(args)
             return
         now = time.monotonic()
         self.state[address] = list(args)
@@ -380,7 +468,12 @@ class MirrorEngine(asyncio.DatagramProtocol):
         # node's op-log IS the real-time backup on the second PC
         self._log_op(src.name, address, args)
         if not targets:
+            if self.active and self.sync_mode == "single":
+                # wrong desk touched: spring it back to the master's value
+                self._schedule_revert(src, address, args, now)
             return
+        if self.sync_mode == "independent" and is_screen_path(address):
+            return  # screen/UI state stays local; audio still syncs
         pairmap = self.pairmap_ba if src is self.b else self.pairmap_ab
         if pairmap:
             translated = pairmap.translate(address, args)
@@ -488,6 +581,40 @@ class MirrorEngine(asyncio.DatagramProtocol):
         self._delayed.clear()
         if n:
             log.info("discarded %d pending delayed write(s)", n)
+
+    # ---- single mode: auto spring-back --------------------------------
+    def _schedule_revert(self, slave: Console, path: str, args, now: float):
+        """single mode: someone touched the non-master console. After a short
+        grace period push the master's current value back so the desk
+        springs back (reference UX: 备台误操作后自动回弹).
+
+        Trailing semantics like the delay queue: repeated touches on the
+        same path collapse into one spring-back of the master's value.
+        Simultaneous touches lose against the master - the value written
+        back is the master's *current* value at fire time.
+        """
+        key = (slave.name, path)
+        if key not in self._revert:
+            self.stats["reverts"] = self.stats.get("reverts", 0) + 1
+            self._record_op(slave.name, path, args, slave.name,
+                            "reverting", self.revert_delay)
+        self._revert[key] = [now + self.revert_delay, slave]
+
+    async def _revert_loop(self):
+        while not self._stop.is_set():
+            await asyncio.sleep(0.03)
+            now = time.monotonic()
+            for key in [k for k, e in self._revert.items() if now >= e[0]]:
+                _, slave = self._revert.pop(key)
+                if self.sync_mode != "single" or not self.active:
+                    continue  # mode switched / demoted while waiting
+                mkey = "a" if slave is self.b else "b"
+                val = self.state_by_src[mkey].get(key[1])
+                if val is None:
+                    continue  # master's value never observed - nothing to restore
+                self._dispatch(slave, key[1], val)
+                self._record_op(self.a.name if slave is self.b else self.b.name,
+                                key[1], val, slave.name, "reverted", None)
 
     # ---- remote client proxy ----------------------------------------
     def _handle_client(self, address, args, addr):
@@ -658,6 +785,8 @@ class MirrorEngine(asyncio.DatagramProtocol):
             vb = sb.get(path)
             if vb is None:
                 continue
+            if self.sync_mode == "independent" and is_screen_path(path):
+                continue  # displays are intentionally independent
             ta = self.state_src_ts["a"].get(path, 0.0)
             tb = self.state_src_ts["b"].get(path, 0.0)
             if now - max(ta, tb) < grace:
@@ -684,13 +813,19 @@ class MirrorEngine(asyncio.DatagramProtocol):
         return {
             "active": self.active,
             "ha": bool(self.ha),
+            "sync_mode": self.sync_mode,
+            "master": self.master,
+            "direction": self.direction,
+            "xinfo": self.xinfo,
             "consoles": [link(self.a, "a"), link(self.b, "b")],
             "stats": st,
             "latency_ms": lat,
             "clients": len(self.clients),
             "pending_coalesce": len(self._pending),
             "pending_delay": len(self._delayed),
+            "pending_revert": len(self._revert),
             "sync_delay_s": self.sync_delay,
+            "revert_delay_s": self.revert_delay,
             "recent_ops": list(self.recent_ops)[-24:],
             "sync_paths": len(self.sync_paths),
             "driver_a": self.drv_a.key, "driver_b": self.drv_b.key,
@@ -705,6 +840,8 @@ class MirrorEngine(asyncio.DatagramProtocol):
         self._fs_busy = True  # baseline alignment bypasses the sync delay
         try:
             for path in self.sync_paths:
+                if self.sync_mode == "independent" and is_screen_path(path):
+                    continue  # never align screen state in independent mode
                 self._send(src, path, [])  # read request; reply gets forwarded
                 await asyncio.sleep(0.002)
         except asyncio.CancelledError:
@@ -742,6 +879,9 @@ def default_config(host_a, host_b, port_a=10023, port_b=10023):
         "listen_host": "0.0.0.0",
         "listen_port": 10099,
         "direction": "both",
+        "sync_mode": "mirror",
+        "master": "a",
+        "revert_delay_s": 0.5,
         "echo_window_s": 1.0,
         "renew_interval_s": 5.0,
         "coalesce_window_s": 0.12,

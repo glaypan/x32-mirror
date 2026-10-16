@@ -59,6 +59,12 @@ def _paths_behringer_x32() -> List[str]:
     for m in range(1, 7):
         paths.append(f"/config/mutegroup/{m:02d}/on")
     paths += ["/config/solo/level", "/config/solo/mute"]
+    # screen/UI state: selected channel + per-channel solo switches.
+    # Followed in mirror mode, kept local in "independent" mode
+    # (see engine.is_screen_path).
+    paths.append("-stat/selidx")
+    for s in range(1, 33):
+        paths.append(f"-stat/ssolosw/{s:02d}")
     return paths
 
 
@@ -74,6 +80,12 @@ def _paths_wing() -> List[str]:
         paths += [f"/dca/{d}/fdr", f"/dca/{d}/mute"]
     for m in range(1, 5):
         paths += [f"/main/{m}/fdr", f"/main/{m}/mute"]
+    # screen/UI state (same -stat/ family as X32): selected channel + solo
+    # switches - followed in mirror mode, kept local in "independent" mode
+    # (see engine.is_screen_path)
+    paths.append("-stat/selidx")
+    for s in range(1, 41):
+        paths.append(f"-stat/solosw/{s}")
     return paths
 
 

@@ -106,10 +106,16 @@ HELP_USAGE = """\
      跨型号配对（如 X32 ↔ WING）会自动做推子 dB 换算。
   3. 点“保存配置”写入 config.json。
 
-三、启动镜像（“运行状态”页）
-  1. 点【启动镜像】。状态灯变绿即运行中。
-  2. 启动后工具自动做全量基线对齐（把 A 台当前状态读一遍同步给 B 台）。
-  3. 之后在任意一台上动推子/静音/换场景，另一台立即执行同样操作。
+三、选择同步模式并启动镜像（“同步模式”页）
+  1. 三种模式（右侧可切主机 A/B）：
+     ● 单控台（A → B）：主台操作，备台跟随；备台被人误动后约 0.5 秒
+       自动回弹到主机状态；两台同时操作以主机为准。
+     ● 双控台全镜像（A ≠ B）：双侧双向同步，支持的屏幕状态一起跟随。
+     ● 双控台显示独立（A · B）：音频双侧双向同步，两边屏幕各自操作，
+       屏幕状态（选中通道/独奏开关等）不互相跟随。
+  2. 点【连接】启动镜像，状态变为“连接成功”。启动后自动做全量基线
+     对齐（把主机当前状态读一遍同步给另一台）。
+  3. 运行中切换模式会先把主机状态完整对齐到另一台，对齐期间请勿操作。
 
 四、用手机/iPad/电脑遥控软件（Mixing Station、X32-Edit 等）
   遥控软件里服务器地址不要填调音台 IP，改填：
@@ -149,8 +155,9 @@ HELP_CAUTION = """\
      进行的调音会被覆盖。演出进行中不要随意恢复；恢复前先拍快照。
 
 ⚠ 3. 不要在两台调音台上同时操作同一路径
-     同时操作按“后写为准”(last-write-wins)裁决，虽然不会报错，
-     但结果可能和你预期的不同。养成“谁主调谁操作”的习惯。
+     全镜像模式下同时操作按“后写为准”(last-write-wins)裁决，虽然
+     不会报错，但结果可能和你预期的不同。养成“谁主调谁操作”的习惯；
+     或改用单控台模式——同时操作一律以主机为准，备台误动会自动回弹。
 
 ⚠ 4. 跨品牌配对只同步已映射的参数
      X32↔WING 已覆盖推子/静音/通道名等核心参数；EQ、效果器、
@@ -196,9 +203,11 @@ A：正常。跨机型（X32↔WING）换算使用官方分段线性曲线，误
 Q：换场景会同步吗？
 A：会。场景切换作为高优先级事件立即转发（同族配对）。
 
-Q：可以三台调音台一起同步吗？
-A：当前版本为两两配对。三台以上请跑多个工具实例（不同监听端口），
-   或等待后续版本的多机组网。
+Q：三种同步模式有什么区别？
+A：单控台=主机单向驱动备台（备台误动约 0.5 秒回弹，同时操作以主机
+   为准）；全镜像=双侧双向，屏幕状态也一起跟随；显示独立=音频双向
+   同步，但两边屏幕各自操作不互跟。运行中可随时切换，切换前会先把
+   主机状态对齐到另一台。
 
 Q：操作日志在哪里？
 A：config 里 oplog_db 指定的 SQLite 文件（默认 oplog.sqlite），
@@ -268,6 +277,7 @@ class MirrorGUI(tk.Tk):
         except Exception as exc:  # noqa: BLE001
             self.cfg = {
                 "listen_host": "0.0.0.0", "listen_port": 10099, "direction": "both",
+                "sync_mode": "mirror", "master": "a",
                 "full_sync": True, "full_sync_from": "a", "oplog_db": "oplog.sqlite",
                 "consoles": {
                     "a": {"name": "console-A", "host": "192.168.1.100", "port": 10023, "driver": "x32"},
@@ -292,6 +302,8 @@ class MirrorGUI(tk.Tk):
         self.var_delay.set(str(c.get("sync_delay_s", 0) or 0))
         self.var_fullsync.set(bool(c.get("full_sync", True)))
         self.var_oplog.set(c.get("oplog_db") or "")
+        self.var_mode.set(c.get("sync_mode", "mirror"))
+        self.var_master.set(c.get("master", "a"))
 
     def _collect_config(self):
         def port(v, dflt):
@@ -306,10 +318,19 @@ class MirrorGUI(tk.Tk):
             except (TypeError, ValueError):
                 return 0.0
 
+        mode = self.var_mode.get() or "mirror"
+        master = self.var_master.get() or "a"
+        if mode == "single":
+            direction = "a_to_b" if master == "a" else "b_to_a"
+        else:
+            direction = "both"
         return {
             "listen_host": "0.0.0.0",
             "listen_port": port(self.var_listen.get(), 10099),
-            "direction": self.var_direction.get(),
+            "direction": direction,
+            "sync_mode": mode,
+            "master": master,
+            "revert_delay_s": 0.5,
             "sync_delay_s": delay(self.var_delay.get()),
             "echo_window_s": 1.0,
             "renew_interval_s": 5.0,
@@ -507,6 +528,8 @@ class MirrorGUI(tk.Tk):
         self.var_delay = tk.StringVar(value="0")
         self.var_fullsync = tk.BooleanVar(value=True)
         self.var_oplog = tk.StringVar(value="oplog.sqlite")
+        self.var_mode = tk.StringVar(value="mirror")
+        self.var_master = tk.StringVar(value="a")
         ttk.Label(opts, text="监听端口:").grid(row=0, column=0, sticky="e", padx=(0, 6), pady=3)
         ttk.Entry(opts, textvariable=self.var_listen, width=10).grid(row=0, column=1, sticky="w", pady=3)
         ttk.Label(opts, text="同步方向:").grid(row=0, column=2, sticky="e", padx=(24, 6), pady=3)
@@ -517,10 +540,22 @@ class MirrorGUI(tk.Tk):
         ttk.Label(opts, text="0 = 实时；A 操作后延迟多少秒再同步到 B",
                   foreground="#666666", font=("Microsoft YaHei", 8)).grid(
             row=1, column=2, columnspan=2, sticky="w", padx=(24, 6), pady=3)
-        ttk.Checkbutton(opts, text="启动时全量基线对齐 (A→B)",
-                        variable=self.var_fullsync).grid(row=2, column=0, columnspan=2, sticky="w", pady=3)
-        ttk.Label(opts, text="操作日志:").grid(row=2, column=2, sticky="e", padx=(24, 6), pady=3)
-        ttk.Entry(opts, textvariable=self.var_oplog, width=18).grid(row=2, column=3, sticky="w", pady=3)
+        ttk.Label(opts, text="同步模式:").grid(row=2, column=0, sticky="e", padx=(0, 6), pady=3)
+        ttk.Combobox(opts, textvariable=self.var_mode, width=12, state="readonly",
+                     values=["mirror", "single", "independent"]).grid(row=2, column=1, sticky="w", pady=3)
+        ttk.Label(opts, text="single 单控台(备台误操作自动回弹) / mirror 全镜像 / independent 显示独立(屏幕状态不跟随)",
+                  foreground="#666666", font=("Microsoft YaHei", 8)).grid(
+            row=2, column=2, columnspan=2, sticky="w", padx=(24, 6), pady=3)
+        ttk.Label(opts, text="主机:").grid(row=3, column=0, sticky="e", padx=(0, 6), pady=3)
+        ttk.Combobox(opts, textvariable=self.var_master, width=6, state="readonly",
+                     values=["a", "b"]).grid(row=3, column=1, sticky="w", pady=3)
+        ttk.Label(opts, text="单控台模式由主机驱动备台；两台同时操作以主机为准",
+                  foreground="#666666", font=("Microsoft YaHei", 8)).grid(
+            row=3, column=2, columnspan=2, sticky="w", padx=(24, 6), pady=3)
+        ttk.Checkbutton(opts, text="启动时全量基线对齐 (主机→备机)",
+                        variable=self.var_fullsync).grid(row=4, column=0, columnspan=2, sticky="w", pady=3)
+        ttk.Label(opts, text="操作日志:").grid(row=4, column=2, sticky="e", padx=(24, 6), pady=3)
+        ttk.Entry(opts, textvariable=self.var_oplog, width=18).grid(row=4, column=3, sticky="w", pady=3)
 
         ttk.Button(frame, text="💾 保存配置到 config.json", command=self._save_config).pack(anchor="w")
 
@@ -654,13 +689,14 @@ class MirrorGUI(tk.Tk):
                 n = eng.stats.get("echo_n", 0)
                 lat = (eng.stats.get("echo_ms_sum", 0.0) / n) if n else 0.0
                 info = (f"模型: {eng.drv_a.key} ↔ {eng.drv_b.key}\n"
-                        f"方向: {eng.direction}\n"
+                        f"模式: {eng.sync_mode} (主机 {eng.master}) · 方向 {eng.direction}\n"
                         f"监听: :{self.cfg.get('listen_port', 10099)} (遥控端 {len(eng.clients)}/{eng.max_clients})\n"
                         f"同步延迟: {lat:.0f} ms (回声实测均值, {n} 样本)\n"
                         f"统计: 收 {eng.stats.get('received', 0)} / 转 {eng.stats.get('forwarded', 0)}"
                         f" / 抑制回声 {eng.stats.get('echo_suppressed', 0)}"
                         f" / 合并写入 {eng.stats.get('coalesced', 0)}"
                         f"{(' / 对账修复 ' + str(eng.stats.get('reconcile_fixes', 0))) if eng.stats.get('reconcile_fixes') else ''}"
+                        f"{(' / 误操作回弹 ' + str(eng.stats.get('reverts', 0))) if eng.stats.get('reverts') else ''}"
                         f"{(' / 链路告警 ' + str(eng.stats.get('link_alerts', 0))) if eng.stats.get('link_alerts') else ''}\n"
                         f"参数覆盖: {len(eng.sync_paths)} 路 (含增益/发送/声像/静音组)")
                 self.var_summary.set(info)
