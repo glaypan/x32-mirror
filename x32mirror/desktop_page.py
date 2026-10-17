@@ -91,11 +91,11 @@ input,select{font-family:inherit;font-size:13px;color:var(--ink)}
 #wall::after{content:"";position:absolute;inset:0;backdrop-filter:blur(2px)}
 
 /* ============================== layout ============================== */
-#app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;height:100vh}
+#app{display:grid;grid-template-columns:var(--sidebar-w) minmax(0,1fr);grid-template-rows:minmax(0,1fr);height:100vh;overflow:hidden}
 
 /* ---- sidebar (vibrancy) ---- */
 #side{
-  position:relative;display:flex;flex-direction:column;
+  position:relative;display:flex;flex-direction:column;min-height:0;overflow-y:auto;
   background:var(--mat); -webkit-backdrop-filter:blur(28px) saturate(1.7); backdrop-filter:blur(28px) saturate(1.7);
   border-right:1px solid var(--line);
   padding: max(38px, env(safe-area-inset-top)) 12px 12px;
@@ -128,12 +128,13 @@ nav button.sel svg{color:var(--accent-ink)}
 #enginePill b{color:var(--ink);font-weight:600}
 
 /* ---- main ---- */
-#main{display:flex;flex-direction:column;min-width:0;background:var(--mat-strong);
+#main{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--mat-strong);
   -webkit-backdrop-filter:blur(36px) saturate(1.6); backdrop-filter:blur(36px) saturate(1.6);}
-#bar{display:flex;align-items:center;gap:12px;padding:14px 28px 10px;min-height:52px}
+#bar{display:flex;align-items:center;gap:12px;padding:14px 28px 10px;min-height:52px;flex:none}
 #bar h1{font-size:17px;font-weight:700;letter-spacing:-.02em;margin-right:auto;display:flex;align-items:center;gap:10px}
 #bar h1 small{font-size:12px;font-weight:500;color:var(--ink-2)}
-#content{flex:1;overflow-y:auto;padding:6px 28px 34px;scrollbar-width:thin}
+/* the ONLY scroll container: capped by the grid row above, scrolls its content */
+#content{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:6px 28px 34px;scrollbar-width:thin}
 .page{display:none;animation:pageIn .32s var(--ease)}
 .page.on{display:block}
 @keyframes pageIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
@@ -199,7 +200,7 @@ select.field{text-align:left}
 @keyframes ledPulse{0%,100%{opacity:1}50%{opacity:.55}}
 
 /* ============ card workspace (home) ============ */
-.sect{margin-bottom:26px}
+.sect{margin-bottom:20px}
 .sect>.sh{display:flex;align-items:center;gap:10px;margin:2px 2px 13px;flex-wrap:wrap}
 .sect>.sh .n{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--accent);
   background:color-mix(in srgb,var(--accent) 12%,transparent);border-radius:6px;padding:2px 8px;letter-spacing:.04em}
@@ -237,8 +238,8 @@ select.field{text-align:left}
 .modes{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
 @media (max-width:980px){.modes{grid-template-columns:1fr}}
 .modecard{position:relative;text-align:left;background:var(--card);border:1.5px solid var(--line);
-  border-radius:var(--r-lg);box-shadow:var(--shadow);padding:18px 18px 16px;display:flex;flex-direction:column;gap:9px;
-  min-height:146px;transition:transform .16s var(--ease),border-color .18s,background .18s,box-shadow .18s}
+  border-radius:var(--r-lg);box-shadow:var(--shadow);padding:16px 17px 14px;display:flex;flex-direction:column;gap:8px;
+  min-height:128px;transition:transform .16s var(--ease),border-color .18s,background .18s,box-shadow .18s}
 .modecard:hover{transform:translateY(-2px);box-shadow:0 2px 3px rgba(0,0,0,.05),0 16px 44px rgba(0,0,0,.10)}
 .modecard:active{transform:scale(.985)}
 .modecard .glyph{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--ink-2);
@@ -272,7 +273,7 @@ select.field{text-align:left}
 
 /* live sync card (compact lane + key stats + feed) */
 #laneCard{padding:0;overflow:hidden;position:relative}
-#laneWrap{position:relative;height:86px;background:
+#laneWrap{position:relative;height:78px;background:
   radial-gradient(120% 150% at 50% -20%,color-mix(in srgb,var(--accent) 9%,transparent),transparent 60%)}
 #lane{position:absolute;inset:0;width:100%;height:100%}
 #laneInfo{position:absolute;left:14px;bottom:8px;right:14px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;
@@ -290,7 +291,7 @@ select.field{text-align:left}
 #opsCard .oh{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 #opsCard .oh b{font-size:13px}
 #opsCard .oh .mut{font-size:11px}
-#opsList{max-height:196px;overflow:auto;display:flex;flex-direction:column;gap:2px}
+#opsList{max-height:150px;overflow:auto;display:flex;flex-direction:column;gap:2px}
 .oprow{display:flex;align-items:center;gap:9px;padding:5px 2px;border-bottom:1px solid var(--line-2);font-size:12px;animation:pageIn .3s var(--ease)}
 .oprow:last-child{border-bottom:0}
 .oprow .ts{font-family:var(--mono);flex:none;font-size:11px;color:var(--ink-3)}
@@ -358,9 +359,11 @@ select.field{text-align:left}
 .mono{font-family:var(--mono)}
 .mut{color:var(--ink-2)}
 .tnum{font-variant-numeric:tabular-nums}
-::-webkit-scrollbar{width:8px;height:8px}
-::-webkit-scrollbar-thumb{background:var(--fill-3);border-radius:4px}
+/* clearly visible scrollbars - the workspace scrolls inside #content */
+::-webkit-scrollbar{width:10px;height:10px}
 ::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--ink-3) 60%,transparent);border-radius:5px;border:2px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--ink-2) 80%,transparent);background-clip:content-box}
 </style>
 </head>
 <body>
