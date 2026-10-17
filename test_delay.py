@@ -65,11 +65,19 @@ async def main():
     loop = asyncio.get_running_loop()
 
     async def spawn(cfg):
-        eng = MirrorEngine(cfg)
-        transport, _ = await loop.create_datagram_endpoint(
-            lambda: eng, local_addr=(cfg["listen_host"], cfg["listen_port"]))
-        await eng.start()
-        return eng, transport
+        # Windows can report WSAEADDRINUSE (10048) for a few hundred ms after
+        # a stop when the test suites run back-to-back - retry briefly.
+        for attempt in range(8):
+            eng = MirrorEngine(cfg)
+            try:
+                transport, _ = await loop.create_datagram_endpoint(
+                    lambda: eng, local_addr=(cfg["listen_host"], cfg["listen_port"]))
+            except OSError:
+                await asyncio.sleep(0.4)
+                continue
+            await eng.start()
+            return eng, transport
+        raise RuntimeError(f"cannot bind {cfg['listen_host']}:{cfg['listen_port']}")
 
     # ---------- phase 1: full sync baseline ignores the delay ----------
     print("phase 1: full-sync baseline with delay active")
@@ -79,7 +87,7 @@ async def main():
           f"B state paths={len(b.state)}")
     await eng.stop()
     tr.close()
-    await asyncio.sleep(0.6)  # let Windows release the UDP port
+    await asyncio.sleep(1.2)  # let Windows release the UDP port (stop may land mid-align)
     b.state = {p: v for p, v in b.state.items()}  # keep; next engine re-aligns
 
     # ---------- phase 2: delayed mirroring ----------

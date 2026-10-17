@@ -165,6 +165,9 @@ class EngineManager:
                 "sync_delay_s": detail.get("sync_delay_s", 0),
                 "pending_delay": detail.get("pending_delay", 0),
                 "pending_revert": detail.get("pending_revert", 0),
+                "paused": detail.get("paused", False),
+                "sync_job": detail.get("sync_job"),
+                "last_align": detail.get("last_align"),
                 "recent_ops": detail.get("recent_ops", []),
             })
         return out
@@ -185,6 +188,46 @@ class EngineManager:
             fut = asyncio.run_coroutine_threadsafe(self._set_mode(mode, master), self.loop)
             try:
                 return fut.result(timeout=10)
+            except Exception as exc:  # noqa: BLE001
+                return {"ok": False, "error": str(exc)}
+
+    # -- safety check / pause -------------------------------------------
+    def job_info(self) -> dict:
+        """Current (or last) alignment job, polled by the progress dialog."""
+        eng = self.engine
+        if eng is None:
+            return {"running": False, "job": None, "paused": False}
+        return {"running": True, "paused": bool(eng.paused),
+                "job": eng.job.dict() if eng.job else None,
+                "last_align": eng.last_align}
+
+    def cancel_align(self) -> dict:
+        with self._lock:
+            eng = self.engine
+            if eng is None:
+                return {"ok": False, "not_running": True}
+
+            async def _go():
+                return eng.cancel_align()
+
+            fut = asyncio.run_coroutine_threadsafe(_go(), self.loop)
+            try:
+                return fut.result(timeout=5)
+            except Exception as exc:  # noqa: BLE001
+                return {"ok": False, "error": str(exc)}
+
+    def set_paused(self, value: bool) -> dict:
+        with self._lock:
+            eng = self.engine
+            if eng is None:
+                return {"ok": False, "not_running": True}
+
+            async def _go():
+                return eng.set_paused(value)
+
+            fut = asyncio.run_coroutine_threadsafe(_go(), self.loop)
+            try:
+                return fut.result(timeout=5)
             except Exception as exc:  # noqa: BLE001
                 return {"ok": False, "error": str(exc)}
 
@@ -342,6 +385,8 @@ class WebApp:
                     self._json({"usage": HELP_USAGE, "caution": HELP_CAUTION, "faq": HELP_FAQ})
                 elif path == "/api/ha":
                     self._json(app.mgr.ha_info())
+                elif path == "/api/job":
+                    self._json(app.mgr.job_info())
                 elif path == "/api/mode":
                     eng = app.mgr.engine
                     if eng is None:
@@ -414,6 +459,10 @@ class WebApp:
                                              "确认本节点已启用双机热备并正在运行。"})
                     else:
                         self._json({"ok": True, "ack": ack})
+                elif path == "/api/job/cancel":
+                    self._json(app.mgr.cancel_align())
+                elif path == "/api/pause":
+                    self._json(app.mgr.set_paused(bool(body.get("paused"))))
                 elif path == "/api/mode":
                     mode = str(body.get("mode") or "").strip()
                     master = str(body.get("master") or "").strip()

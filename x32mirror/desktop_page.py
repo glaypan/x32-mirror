@@ -252,6 +252,44 @@ select.field{text-align:left}
 .modenote{margin-top:13px;font-size:11.5px;color:var(--ink-3);line-height:1.8}
 .modenote b{color:var(--ink-2);font-weight:600}
 
+/* run status card — "可以操作调音台" + link counters */
+.runcard{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow);
+  padding:15px 18px 12px;display:flex;flex-direction:column;gap:11px}
+.runcard .rc-top{display:flex;align-items:flex-start;gap:12px}
+.runcard .rc-t{font-size:14.5px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:center;gap:9px}
+.runcard .rc-sub{font-size:11.5px;color:var(--ink-3);margin-top:5px}
+.runcard .rc-acts{margin-left:auto;display:flex;gap:8px;flex:none}
+.runcard .rc-bot{display:flex;align-items:center;gap:16px;border-top:1px solid var(--line-2);padding-top:10px;flex-wrap:wrap}
+.runcard .rc-stats{display:flex;gap:20px;flex-wrap:wrap;font-size:11.5px;color:var(--ink-2)}
+.runcard .rc-stats b{font-family:var(--mono);font-size:13.5px;color:var(--ink);font-weight:600;margin-left:5px;font-variant-numeric:tabular-nums}
+.runcard .rc-stats .hot b{color:var(--accent)}
+.runcard .rc-stats .bad b{color:var(--led-warn)}
+.runcard.paused{border-color:color-mix(in srgb,var(--led-warn) 40%,var(--line))}
+.runcard.paused .rc-t{color:var(--led-warn)}
+
+/* safety-check progress dialog */
+#jobBg{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:24px;
+  background:rgba(0,0,0,.30);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+  opacity:0;pointer-events:none;transition:opacity .2s var(--ease)}
+#jobBg.on{opacity:1;pointer-events:auto}
+#jobDlg{width:min(540px,92vw);background:var(--mat-strong);
+  -webkit-backdrop-filter:blur(40px) saturate(1.8);backdrop-filter:blur(40px) saturate(1.8);
+  border:1px solid var(--line);border-radius:18px;box-shadow:0 26px 80px rgba(0,0,0,.36);
+  padding:22px 24px 16px;transform:translateY(12px) scale(.985);transition:transform .26s var(--ease)}
+#jobBg.on #jobDlg{transform:none}
+#jobDlg h3{font-size:15.5px;font-weight:700;letter-spacing:-.01em;margin-bottom:9px}
+#jobDlg p{font-size:12.5px;color:var(--ink-2);line-height:1.75;margin-bottom:14px}
+#jobDlg .jtarget{font-size:12.5px;font-weight:600;margin-bottom:11px;color:var(--ink)}
+#jobDlg .pbar{position:relative;height:9px;border-radius:5px;background:var(--fill);overflow:hidden;margin-bottom:11px}
+#jobDlg .pbar i{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:5px;
+  background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 55%,#fff));
+  transition:width .28s var(--ease)}
+#jobDlg .jline{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:7px}
+#jobDlg .jnote{font-size:11px;color:var(--ink-3);margin-bottom:16px}
+#jobDlg .jdone{font-size:12.5px;font-weight:600;margin-bottom:10px;display:none}
+#jobDlg .jacts{display:flex;justify-content:flex-end;gap:10px}
+
 /* quick action cards */
 .quick{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:14px}
 .qcard{display:flex;align-items:center;gap:13px;text-align:left;background:var(--card);border:1px solid var(--line);
@@ -465,18 +503,41 @@ select.field{text-align:left}
               <small>双侧双向同步，两边屏幕各自操作。</small>
             </button>
           </div>
-          <p class="modenote">切换前会先把<b>主机</b>的当前状态完整对齐到另一台，对齐期间请勿操作调音台。单控台模式下备台误操作约 <b>0.5 秒</b>后自动回弹到主机状态；两台同时操作时以主机为准。未连接时修改模式，将在下次启动镜像后生效。</p>
+          <p class="modenote">切换前会先做<b>安全检测</b>：以<b>主机</b>为基准预检兼容参数、写入备台并逐项读回核对（不一致会自动恢复一次），期间请勿操作调音台。单控台模式下备台误操作约 <b>0.5 秒</b>后自动回弹到主机状态；两台同时操作时以主机为准。未连接时修改模式，将在下次启动镜像后生效。</p>
         </div>
 
-        <!-- 03 快捷操作 -->
+        <!-- 03 运行状态：可以操作调音台 + 链路核对计数 -->
+        <div class="sect" id="runSect" style="display:none">
+          <div class="sh"><span class="n">03</span><span class="t">运行状态</span>
+            <span class="s">显示“可以操作调音台”时才做现场操作</span>
+          </div>
+          <div class="runcard" id="runCard">
+            <div class="rc-top">
+              <div>
+                <div class="rc-t"><span class="led on" id="rcLed"></span><span id="rcTitle">镜像运行中</span></div>
+                <div class="rc-sub" id="rcSub">—</div>
+              </div>
+              <div class="rc-acts">
+                <button class="btn" id="rcPause">暂停同步</button>
+                <button class="btn danger" id="rcStop">结束同步</button>
+              </div>
+            </div>
+            <div class="rc-bot">
+              <div class="rc-stats" id="rcStats"></div>
+              <button class="btn plain" id="rcLogs" style="margin-left:auto">查看日志 →</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 04 快捷操作 -->
         <div class="sect">
-          <div class="sh"><span class="n">03</span><span class="t">快捷操作</span></div>
+          <div class="sh"><span class="n">04</span><span class="t">快捷操作</span></div>
           <div class="quick" id="quickRow"></div>
         </div>
 
-        <!-- 04 实时同步（运行中显示） -->
+        <!-- 05 实时同步（运行中显示） -->
         <div class="sect" id="liveSect" style="display:none">
-          <div class="sh"><span class="n">04</span><span class="t">实时同步</span>
+          <div class="sh"><span class="n">05</span><span class="t">实时同步</span>
             <span class="s">界面仅展示同步过程，不写台</span>
             <span class="acts" id="opsPending"></span>
           </div>
@@ -525,7 +586,7 @@ select.field{text-align:left}
           <div class="row"><span class="lab">同步延迟<small>A 操作后延迟多少秒再同步到 B</small></span><span class="val">
             <input class="field mono" id="syncDelay" style="max-width:110px" inputmode="decimal" placeholder="0">
             <span class="mut" style="font-size:11px">秒 · 0 = 实时同步</span></span></div>
-          <div class="row"><span class="lab">启动时全量对齐<small>先把 A 台状态完整同步给 B 台</small></span><span class="val"><label class="sw"><input type="checkbox" id="fullSync"><i></i></label></span></div>
+          <div class="row"><span class="lab">启动时安全检测<small>先预检并读回核对，再进入实时同步</small></span><span class="val"><label class="sw"><input type="checkbox" id="fullSync"><i></i></label></span></div>
           <div class="row note" style="justify-content:flex-end"><span>修改后点右上角「存储」生效（重启镜像后完全生效）</span></div>
         </div>
       </section>
@@ -613,6 +674,18 @@ select.field{text-align:left}
   </main>
 </div>
 
+<!-- safety-check progress dialog (mode switch / start) -->
+<div id="jobBg"><div id="jobDlg">
+  <h3 id="jobTitle">模式切换安全检测</h3>
+  <p id="jobDesc">正在以 A 台为基准对齐 B 台，并读回核对允许同步的参数。请暂勿操作两台调音台或 All Live，完成会提示可以操作。</p>
+  <div class="jtarget" id="jobTarget">正在切换…</div>
+  <div class="pbar"><i id="jobBar"></i></div>
+  <div class="jline" id="jobLine">Node写入 0/0 · 错误 0 · —</div>
+  <div class="jdone" id="jobDone"></div>
+  <div class="jnote">取消会停止本次处理；已经写入的参数不会自动撤销。</div>
+  <div class="jacts"><button class="btn big" id="jobCancel">取消</button></div>
+</div></div>
+
 <!-- sheet + popover + toast -->
 <div id="sheetBg"><div id="sheet">
   <div class="ic" id="sheetIc"></div><h3 id="sheetTitle"></h3><p id="sheetBody"></p>
@@ -637,8 +710,10 @@ const API={
 };
 const ACCENTS={blue:"#0a84ff",purple:"#bf5af2",pink:"#ff375f",red:"#ff453a",orange:"#ff9f0a",yellow:"#e0b400",green:"#30d158",graphite:"#8e8e93"};
 const ACCENT_INK={yellow:"#3a2f00",graphite:"#fff"};
-let state={page:"home",theme:"auto",accent:"blue",running:false,status:null,ha:null,mode:null,prev:null,latHist:[],dots:[],logSeq:0,logLv:"all",logBuf:[],docs:null};
+let state={page:"home",theme:"auto",accent:"blue",running:false,status:null,ha:null,mode:null,prev:null,latHist:[],dots:[],logSeq:0,logLv:"all",logBuf:[],docs:null,cfgLoaded:false};
 const MODE_LABEL={single:"单控台",mirror:"双控台全镜像",independent:"双控台显示独立"};
+const PHASE_LABEL={preflight:"兼容预检",scan:"读取主机状态",align:"写入备台",verify:"读回核对",done:"已完成",cancelled:"已取消",failed:"检测失败"};
+let jobTimer=null,jobOpen=false;
 
 /* ---------------- theme / accent ---------------- */
 function applyTheme(){
@@ -716,10 +791,45 @@ function renderPill(s){
   else if(!s.running){pl.className="led off";pt.textContent=s.error?"引擎启动出错":"引擎未运行";}
   else{pl.className="led "+(s.active?"on":"warn");pt.textContent=(s.role||"")+(s.active?" · 转发中":" · 只记录");}
 }
+function fmtNum(n){return (n||0).toLocaleString("en-US")}
+/* 03 run status card: title says whether the operator may touch the desks,
+   the bottom row carries the link counters (forward / read-back / pending). */
+function renderRunCard(s){
+  const st=s.stats||{}, jb=s.sync_job||{}, la=s.last_align||null;
+  const busy=!!jb.active;
+  $("rcLed").className="led "+(busy?"warn":(s.paused?"off":"on"));
+  let title,sub;
+  if(busy){
+    title=`安全检测中 · ${jb.pct||0}%`;
+    sub=`${PHASE_LABEL[jb.phase]||jb.phase} · Node ${jb.written||0}/${jb.total||0} · 请勿操作调音台`;
+  }else if(s.paused){
+    title="已暂停同步 · 调音台各自独立";
+    sub="链路保持，转发已停止";
+  }else{
+    const ml=MODE_LABEL[s.sync_mode]||s.sync_mode||"镜像";
+    title=`${ml}模式 · 可以操作调音台`;
+    const n=(la&&la.intersection)||s.sync_paths||0;
+    sub=(la&&la.ok===false&&la.pending)
+      ?`兼容预检通过 · 安全交集 ${fmtNum(n)} 项 · ${la.pending} 项待核对`
+      :`兼容预检通过 · 安全交集 ${fmtNum(n)} 项`;
+  }
+  $("rcTitle").textContent=title;
+  $("rcSub").textContent=sub;
+  $("runCard").classList.toggle("paused",!!s.paused);
+  const pb=$("rcPause");pb.textContent=s.paused?"继续同步":"暂停同步";pb.disabled=busy;
+  const rows=[["转发",st.forwarded||0,"hot"],["读回确认",st.readback_ok||0,""],
+              ["待核对",st.readback_pending||0,(st.readback_pending||0)>0?"bad":""],
+              ["自动恢复",st.auto_restored||0,""]];
+  $("rcStats").innerHTML=rows.map(([k,v,c])=>`<span class="${c}">${k}<b>${v}</b></span>`).join("");
+}
 function renderHome(){
   const s=state.status;
   renderPill(s);
   $("liveSect").style.display=state.running?"block":"none";
+
+  // ---- 03 run status: "可以操作调音台" + link counters ----
+  $("runSect").style.display=(state.running&&s)?"block":"none";
+  if(state.running&&s)renderRunCard(s);
 
   // ---- console cards ----
   const badge=$("connBadge");
@@ -753,9 +863,12 @@ function renderHome(){
   $("masterSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("sel",x.dataset.v===(m.master||"a")));
   document.querySelectorAll("#modeCards .modecard").forEach(x=>x.classList.toggle("sel",x.dataset.m===(m.sync_mode||"mirror")));
 
-  // ---- quick action cards ----
+  // ---- quick action cards (rebuilt only when the run state flips, so a
+  // click is never lost to a poll re-render) ----
   const q=$("quickRow");
   const snapDisabled=state.running?"":"disabled";
+  if(state.quickKey!==state.running){
+  state.quickKey=state.running;
   if(state.running){
     q.innerHTML=`
       <button class="qcard danger" id="qStop">
@@ -771,7 +884,7 @@ function renderHome(){
     q.innerHTML=`
       <button class="qcard primary" id="qStart">
         <span class="qic"><svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg></span>
-        <span><b>启动镜像</b><small>先做全量基线对齐，之后实时互同步</small></span></button>
+        <span><b>启动镜像</b><small>先做安全检测与基线对齐，再实时互同步</small></span></button>
       <button class="qcard" id="qSnap" ${snapDisabled}>
         <span class="qic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5A2.5 2.5 0 016.5 6h1.2l1.1-1.8h6.4L16.3 6h1.2A2.5 2.5 0 0120 8.5v8A2.5 2.5 0 0117.5 19h-11A2.5 2.5 0 014 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></svg></span>
         <span><b>拍摄快照</b><small>需先启动镜像</small></span></button>
@@ -788,6 +901,7 @@ function renderHome(){
     $("qSnap").disabled=false;
   });
   $("qLogs")&&($("qLogs").onclick=()=>goto("logs"));
+  }
 
   // ---- bar title carries the live mode summary ----
   if(state.running&&s){
@@ -925,7 +1039,7 @@ async function startEngine(){
   const cfg=collectConfig();
   const r=await API.post("/api/start",cfg);
   if(!r.ok){toast("启动失败："+(r.error||"未知错误"),"err");return;}
-  toast("镜像引擎已启动，正在做全量基线对齐…");
+  toast("镜像引擎已启动，正在做安全检测…");
   state.prev=null;state.latHist=[];poll(true);
 }
 async function stopEngine(){
@@ -948,6 +1062,7 @@ async function loadConfig(){
   $("syncDelay").value=c.sync_delay_s||0;
   $("fullSync").checked=!!c.full_sync;
   $("dirSeg").querySelectorAll("button").forEach(b=>b.classList.toggle("sel",b.dataset.v===(c.direction||"both")));
+  state.cfgLoaded=true;
 }
 function collectConfig(){
   // fall back to the cached config so the start button works even when the
@@ -961,7 +1076,7 @@ function collectConfig(){
           listen_port:+$("listenPort").value||c.listen_port||10099,
           direction:segSel("dirSeg")||c.direction||"both",
           sync_delay_s:Math.max(0,parseFloat($("syncDelay").value)||0),
-          full_sync:$("fullSync").checked,
+          full_sync:(state.cfgLoaded?$("fullSync").checked:!!c.full_sync),
           sync_mode:(state.mode&&state.mode.sync_mode)||c.sync_mode||"mirror",
           master:(state.mode&&state.mode.master)||c.master||"a"};
 }
@@ -990,23 +1105,23 @@ async function loadMode(){
 function applyMode(mode,master){
   const cur=state.mode||{};
   if(mode===cur.sync_mode&&master===cur.master)return;
+  const jb=state.status&&state.status.sync_job;
+  if(jb&&jb.active){toast("安全检测进行中，请等待完成");return;}
   const apply=async()=>{
     const r=await API.post("/api/mode",{mode,master});
     if(!r.ok){toast("切换失败："+(r.error||""),"err");return;}
     state.mode=Object.assign({},cur,{sync_mode:mode,master:master,direction:r.direction});
-    if(r.saved)toast("模式已保存，启动镜像后生效");
-    else if(r.realigned)toast("模式已切换，正在对齐主机状态…");
-    else toast("模式已切换");
+    if(r.saved){toast("模式已保存，启动镜像后生效");return;}
+    if(r.job&&r.job.active){
+      openJob(r.job);  // safety check first: align + read-back, hands off
+    }else if(r.realigned){
+      toast("模式已切换，正在对齐主机状态…");
+    }else{
+      toast("模式已切换");
+    }
     poll(true);
   };
-  if(state.running){
-    sheet("切换同步模式",
-      `将先把「${master==="a"?"A 主机":"B 主机"}」的当前状态完整对齐到另一台调音台，对齐期间请勿操作调音台。确认切换？`,
-      [{t:"取消",cls:"btn"},{t:"确认切换",cls:"btn primary",fn:apply}],
-      "arrow.triangle.2.circlepath");
-  }else{
-    apply();
-  }
+  apply();
 }
 $("modeCards").onclick=e=>{const b=e.target.closest(".modecard");if(!b)return;
   applyMode(b.dataset.m,(state.mode||{}).master||"a")};
@@ -1148,6 +1263,73 @@ function renderDocs(){
     <h4>❓ 常见问题</h4>${para(d.faq)}`;
 }
 
+/* ---------------- safety-check progress dialog ---------------- */
+let jobFinished=false;
+function openJob(j){
+  if(!j)return;
+  jobFinished=false;
+  jobOpen=true;
+  $("jobBg").classList.add("on");
+  $("jobCancel").textContent="取消";
+  $("jobDone").style.display="none";
+  renderJob(j);
+  if(jobTimer)clearInterval(jobTimer);
+  jobTimer=setInterval(async()=>{
+    try{
+      const r=await API.get("/api/job");
+      if(r&&r.job)renderJob(r.job);
+    }catch(e){}
+  },300);
+}
+function closeJob(){
+  $("jobBg").classList.remove("on");
+  jobOpen=false;
+  if(jobTimer){clearInterval(jobTimer);jobTimer=null;}
+}
+function jobLine(j){
+  const n=x=>(x||0).toLocaleString("en-US");
+  const err=` · 错误 ${j.errors||0}`;
+  if(j.phase==="scan")  return `读取主机 ${n(j.done)}/${n(j.total)}${err} · ${j.current||"—"}`;
+  if(j.phase==="verify")return `读回核对 ${n(j.verified)}/${n(j.total)} · 待核对 ${n(j.pending)}${err} · ${j.current||"—"}`;
+  return `Node写入 ${n(j.written)}/${n(j.total)}${err} · ${j.current||"—"}`;
+}
+function renderJob(j){
+  if(!j){closeJob();return;}
+  const isStart=j.kind==="start";
+  const src=(j.master||"a").toUpperCase(), dst=src==="A"?"B":"A";
+  $("jobTitle").textContent=isStart?"启动镜像安全检查":"模式切换安全检测";
+  $("jobDesc").textContent=`正在以 ${src} 台为基准对齐 ${dst} 台，并读回核对允许同步的参数。请暂勿操作两台调音台或 All Live，完成会提示可以操作。`;
+  $("jobTarget").textContent=(isStart?"建立基线对齐":`切换到${MODE_LABEL[j.mode]||j.mode||""}`)+"…";
+  $("jobBar").style.width=(j.pct||0)+"%";
+  $("jobLine").textContent=jobLine(j);
+  if(j.active||jobFinished)return;
+  jobFinished=true;
+  const ok=j.phase==="done"&&j.ok;
+  const msg=j.message||(ok?"安全检测通过，可以操作调音台":"安全检测未通过");
+  $("jobDone").style.display="block";
+  $("jobDone").textContent=msg;
+  $("jobCancel").textContent="关闭";
+  closeJob();  // done: dismiss and report, like the reference dialog
+  toast(msg+`（写入 ${j.written||0} · 读回确认 ${j.verified||0}）`,ok?"ok":(j.phase==="cancelled"?"":"err"));
+  poll(true);
+}
+$("jobCancel").onclick=async()=>{
+  if($("jobCancel").textContent==="关闭"){closeJob();return;}
+  const r=await API.post("/api/job/cancel");
+  if(!r.ok){closeJob();return;}
+  toast("已请求取消，等待本次处理停止…");
+};
+
+/* run status card buttons (workspace 03) */
+$("rcPause").onclick=async()=>{
+  const s=state.status||{};
+  const r=await API.post("/api/pause",{paused:!s.paused});
+  if(r.ok){toast(r.paused?"已暂停同步 · 转发停止":"已继续同步",r.paused?"":"ok");poll(true);}
+  else toast("操作失败："+(r.error||""),"err");
+};
+$("rcStop").onclick=()=>stopEngine();
+$("rcLogs").onclick=()=>goto("logs");
+
 /* ---------------- sheet / toast ---------------- */
 function sheet(title,body,acts,icon){
   $("sheetTitle").textContent=title;$("sheetBody").innerHTML=body;
@@ -1193,6 +1375,10 @@ async function poll(force){
     state.status=s;state.ha=h;
     state.running=!!(s&&s.running);  // global: pages other than home need it too
     renderPill(s);
+    // a safety-check pass started (mode switch or start-up alignment):
+    // surface the progress dialog wherever the operator is
+    const jb=s&&s.sync_job;
+    if(jb&&jb.active&&!jobOpen)openJob(jb);
   }catch(e){state.status=null;}
   if(state.page==="home")renderHome();
   if(state.page==="ha")renderHA();

@@ -64,7 +64,7 @@ def _paths_behringer_x32() -> List[str]:
     # (see engine.is_screen_path).
     paths.append("-stat/selidx")
     for s in range(1, 33):
-        paths.append(f"-stat/ssolosw/{s:02d}")
+        paths.append(f"-stat/solosw/{s:02d}")
     return paths
 
 

@@ -202,6 +202,9 @@ async def main():
           a.state.get(SEL) != 3, f"A sel={a.state.get(SEL)}")
     check("independent: is_screen_path classification",
           is_screen_path(SEL) and not is_screen_path(FADER))
+    check("independent: every -stat path is classified as screen state",
+          all(is_screen_path(p) for p in eng.sync_paths if p.startswith("-stat/")),
+          f"unclassified={[p for p in eng.sync_paths if p.startswith('-stat/') and not is_screen_path(p)][:3]}")
     await eng.stop()
     tr.close()
     await asyncio.sleep(0.8)
@@ -241,6 +244,67 @@ async def main():
     check("switch: mirror restored (B -> A works again)", ok, f"A={a.state.get(FADER)}")
     check("SYNC_MODES constant intact", SYNC_MODES == ("single", "mirror", "independent"),
           str(SYNC_MODES))
+
+    # ---------- phase 6: safety check + alignment + pause ----------
+    print("phase 6: safety check (preflight / align / read-back) + pause")
+    await eng.stop()
+    tr.close()
+    await asyncio.sleep(0.8)  # release the engine port
+    put(PORT_A, FADER, 0.9)
+    put(PORT_B, FADER, 0.1)   # desks deliberately mis-aligned
+    await asyncio.sleep(0.4)
+    eng, tr = await spawn(make_cfg(sync_mode="mirror"))
+    await asyncio.sleep(0.5)
+
+    async def job_done(timeout=25.0):
+        await wait_for(lambda: eng.job is not None and not eng.job.active, timeout)
+        return eng.job.dict() if eng.job else {}
+
+    r = eng.set_mode("single", "a")  # realign=True -> safety check first
+    check("align: a live mode switch starts the safety check",
+          bool(r.get("job")) and r["job"]["active"], f"job={r.get('job')}")
+    check("align: preflight phase reported", r["job"]["phase"] in
+          ("preflight", "scan"), f"phase={r['job']['phase']}")
+    job = await job_done()
+    check("align: job finishes cleanly", job.get("phase") == "done",
+          f"phase={job.get('phase')} msg={job.get('message')}")
+    check("align: safe intersection covers the sync path table",
+          job.get("intersection") == len(eng.sync_paths),
+          f"intersection={job.get('intersection')} paths={len(eng.sync_paths)}")
+    check("align: every node written", job.get("written") == job.get("total") > 0,
+          f"written={job.get('written')}/{job.get('total')}")
+    check("align: every write read back (pending 0)", job.get("pending") == 0
+          and job.get("verified") >= job.get("total"),
+          f"verified={job.get('verified')} pending={job.get('pending')}")
+    check("align: no write errors", job.get("errors") == 0, f"errors={job.get('errors')}")
+    check("align: B now matches the A baseline", close(b.state.get(FADER), 0.9),
+          f"B={b.state.get(FADER)}")
+    st = eng.stats
+    check("align: counters exposed for the status card",
+          st.get("readback_ok", 0) >= job.get("total") and st.get("readback_pending", 0) == 0,
+          f"readback_ok={st.get('readback_ok')} pending={st.get('readback_pending')}")
+    check("align: last_align summary stored", (eng.last_align or {}).get("ok") is True,
+          f"last_align={eng.last_align}")
+
+    # cancel: a running pass stops, written values stay (documented behaviour)
+    eng.set_mode("mirror", "a")
+    await asyncio.sleep(0.02)
+    c = eng.cancel_align()
+    check("align: cancel accepted", bool(c.get("ok")), f"r={c}")
+    job2 = await job_done(10.0)
+    check("align: cancelled pass stops", job2.get("phase") == "cancelled"
+          and not job2.get("active"), f"phase={job2.get('phase')}")
+
+    # pause / resume from the status card
+    eng.set_paused(True)
+    put(PORT_A, FADER, 0.42)
+    await asyncio.sleep(1.0)
+    check("pause: forwarding stops while paused", not close(b.state.get(FADER), 0.42),
+          f"B={b.state.get(FADER)}")
+    eng.set_paused(False)
+    put(PORT_A, FADER, 0.44)
+    ok = await wait_for(lambda: close(b.state.get(FADER), 0.44), 3)
+    check("pause: resume restores forwarding", ok, f"B={b.state.get(FADER)}")
 
     await eng.stop()
     tr.close()

@@ -43,6 +43,73 @@ def is_screen_path(path: str) -> bool:
     return path.startswith(SCREEN_PATH_PREFIXES)
 
 
+class AlignJob:
+    """One safety-check + alignment pass (mode switch / start / manual).
+
+    The phases mirror the reference UX: preflight (capability intersection)
+    -> scan (pull the baseline console's live values) -> align (write the
+    other console) -> verify (read every write back, auto-restore one round).
+    The UI streams this as a progress dialog.
+    """
+
+    LIVE = ("preflight", "scan", "align", "verify")
+
+    def __init__(self, kind: str, mode: str, master: str):
+        self.kind = kind          # mode_switch | start
+        self.mode = mode
+        self.master = master
+        self.phase = "preflight"
+        self.total = 0            # parameters selected by the preflight
+        self.done = 0             # per-phase progress (0..total)
+        self.written = 0          # nodes written to the target console
+        self.verified = 0         # values confirmed by read-back
+        self.pending = 0          # still mismatched after the auto-restore
+        self.restored = 0         # auto-restore re-writes
+        self.errors = 0
+        self.skipped = 0          # paths unsupported by the other console
+        self.intersection = 0     # compatible parameter set ("安全交集")
+        self.current = ""         # last path touched (shown in the dialog)
+        self.cancel_requested = False
+        self.cancelled = False
+        self.ok = None
+        self.message = ""
+        self.error_sample = ""
+        self.started = time.time()
+        self.finished = None
+
+    @property
+    def active(self) -> bool:
+        return self.phase in self.LIVE
+
+    def elapsed(self) -> float:
+        return (self.finished or time.time()) - self.started
+
+    def pct(self) -> int:
+        if not self.active:
+            return 100
+        if not self.total:
+            return 0
+        frac = min(1.0, self.done / self.total)
+        base, span = {"preflight": (0.0, 0.0), "scan": (0.0, 0.25),
+                      "align": (0.25, 0.5), "verify": (0.75, 0.24)}.get(
+                          self.phase, (0.0, 0.0))
+        return max(0, min(99, int((base + span * frac) * 100)))
+
+    def dict(self) -> dict:
+        return {
+            "kind": self.kind, "mode": self.mode, "master": self.master,
+            "phase": self.phase, "active": self.active,
+            "total": self.total, "done": self.done, "pct": self.pct(),
+            "written": self.written, "verified": self.verified,
+            "pending": self.pending, "restored": self.restored,
+            "errors": self.errors, "skipped": self.skipped,
+            "intersection": self.intersection, "current": self.current,
+            "cancelled": self.cancelled, "ok": self.ok, "message": self.message,
+            "error_sample": self.error_sample,
+            "elapsed_s": round(self.elapsed(), 1),
+        }
+
+
 def harden_udp_socket(transport):
     """Windows: stop WSAECONNRESET from poisoning UDP sockets.
 
@@ -167,8 +234,15 @@ class MirrorEngine(asyncio.DatagramProtocol):
         self._db = None
         self._tasks = []
         self._fs_task = None
+        self._job_task = None
         self._stop = asyncio.Event()
-        self.stats = {"received": 0, "forwarded": 0, "echo_suppressed": 0}
+        self.stats = {"received": 0, "forwarded": 0, "echo_suppressed": 0,
+                      "readback_ok": 0, "readback_pending": 0, "auto_restored": 0}
+        # operator pause (UI "暂停同步"): link stays up, forwarding stops
+        self.paused = False
+        # current / last safety-check pass (UI progress dialog)
+        self.job = None
+        self.last_align = None
         # delayed mirroring: (dst_name, path) -> [args, deadline, dst, src_name, orig_mono]
         self._delayed = {}
         self._fs_busy = False
@@ -247,9 +321,10 @@ class MirrorEngine(asyncio.DatagramProtocol):
     def set_mode(self, mode: str, master: str, realign: bool = True) -> dict:
         """Switch sync mode / master at runtime (called from the web UI).
 
-        The master's state is re-aligned to the other console first, exactly
-        like the reference UX: fix the A->B alignment, do not touch the desks
-        while it runs. Returns the new mode summary.
+        A live switch runs the safety check first (preflight -> align ->
+        read-back), exactly like the reference UX: fix the alignment from the
+        master, tell the operator to keep hands off while it runs. Returns the
+        new mode summary plus the job descriptor the UI streams.
         """
         if mode not in SYNC_MODES:
             raise ValueError(f"unknown sync_mode: {mode!r}")
@@ -262,16 +337,15 @@ class MirrorEngine(asyncio.DatagramProtocol):
         self._rebuild_topology()
         self._discard_delayed()
         self._revert.clear()  # pending spring-backs belong to the old mode
-        realigned = False
-        if realign and changed and self.full_sync and self.active:
-            if self._fs_task is None or self._fs_task.done():
-                self._fs_task = asyncio.create_task(self._full_sync())
-                realigned = True
+        job = None
+        if realign and changed and self.active:
+            started = self.start_align("mode_switch", mode, master)
+            job = started.get("job")
         log.warning("sync mode -> %s (master=%s, direction=%s)%s",
                     mode, master, self.direction,
-                    " - re-aligning master state" if realigned else "")
+                    " - safety check + re-align started" if job else "")
         return {"ok": True, "sync_mode": self.sync_mode, "master": self.master,
-                "direction": self.direction, "realigned": realigned}
+                "direction": self.direction, "realigned": bool(job), "job": job}
 
     async def _autodetect(self):
         """Resolve driver:'auto' consoles by probing them over the wire."""
@@ -388,10 +462,14 @@ class MirrorEngine(asyncio.DatagramProtocol):
         self._stop.set()
         if self.ha:
             await self.ha.stop()
+        if self.job is not None and self.job.active:
+            self.job.cancel_requested = True  # let the job finalise cleanly
         for t in self._tasks:
             t.cancel()
         if self._fs_task:
             self._fs_task.cancel()
+        if self._job_task:
+            self._job_task.cancel()
         try:
             self._flush_pending()  # deliver the final coalesced values
         except Exception:  # noqa: BLE001
@@ -467,6 +545,12 @@ class MirrorEngine(asyncio.DatagramProtocol):
         # record every observed change, active or standby - the standby
         # node's op-log IS the real-time backup on the second PC
         self._log_op(src.name, address, args)
+        # a safety-check pass owns the link: cache + log, never forward
+        # (the operator is told to keep hands off both desks meanwhile)
+        if self.job is not None and self.job.active:
+            return
+        if self.paused:
+            return  # operator paused the link from the UI
         if not targets:
             if self.active and self.sync_mode == "single":
                 # wrong desk touched: spring it back to the master's value
@@ -762,6 +846,9 @@ class MirrorEngine(asyncio.DatagramProtocol):
         """Periodic A-vs-B divergence check; on mismatch re-align via full sync."""
         await asyncio.sleep(self.reconcile_interval)
         while not self._stop.is_set():
+            if self.job is not None and self.job.active:
+                await asyncio.sleep(self.reconcile_interval)
+                continue
             diff = self._state_diff()
             if diff and self.active:
                 log.warning("reconcile: %d parameter(s) differ between consoles, re-aligning (e.g. %s)",
@@ -827,6 +914,9 @@ class MirrorEngine(asyncio.DatagramProtocol):
             "pending_coalesce": len(self._pending),
             "pending_delay": len(self._delayed),
             "pending_revert": len(self._revert),
+            "paused": self.paused,
+            "sync_job": self.job.dict() if self.job else None,
+            "last_align": self.last_align,
             "sync_delay_s": self.sync_delay,
             "revert_delay_s": self.revert_delay,
             "recent_ops": list(self.recent_ops)[-24:],
@@ -834,25 +924,200 @@ class MirrorEngine(asyncio.DatagramProtocol):
             "driver_a": self.drv_a.key, "driver_b": self.drv_b.key,
         }
 
+    # ---- safety check + alignment ------------------------------------
+    def set_paused(self, value: bool) -> dict:
+        """Operator pause ("暂停同步"): keep the link up, stop forwarding."""
+        self.paused = bool(value)
+        if self.paused:
+            self._discard_delayed()
+            self._pending.clear()
+            self._revert.clear()
+        log.warning("sync %s by operator", "PAUSED" if self.paused else "resumed")
+        return {"ok": True, "paused": self.paused}
+
+    def cancel_align(self) -> dict:
+        job = self.job
+        if job is None or not job.active:
+            return {"ok": False, "error": "没有正在进行的对齐"}
+        job.cancel_requested = True
+        log.warning("align[%s] cancel requested", job.kind)
+        return {"ok": True, "job": job.dict()}
+
+    def start_align(self, kind: str, mode: str, master: str) -> dict:
+        """Start a safety-check pass in the background (UI streams progress)."""
+        if self.job is not None and self.job.active:
+            return {"ok": False, "busy": True, "job": self.job.dict()}
+        job = AlignJob(kind, mode, master)
+        self.job = job
+        self._job_task = asyncio.create_task(self._run_job(job))
+        return {"ok": True, "busy": False, "job": job.dict()}
+
+    def _safe_paths(self, job):
+        """Preflight: parameters both consoles understand (the "安全交集").
+
+        Same driver family -> the sync path table itself. Cross family ->
+        only what the parameter mapping translates. Screen state is excluded
+        in independent mode, mirroring the live forwarding rules.
+        """
+        src_is_a = job.master == "a"
+        sdrv = self.drv_a if src_is_a else self.drv_b
+        ddrv = self.drv_b if src_is_a else self.drv_a
+        pairmap = self.pairmap_ab if src_is_a else self.pairmap_ba
+        same_family = ddrv.key == sdrv.key
+        dst_caps = set(ddrv.sync_paths()) if same_family else None
+        pairs = []
+        for path in self.sync_paths:
+            if job.mode == "independent" and is_screen_path(path):
+                continue
+            if dst_caps is not None:
+                if path in dst_caps:
+                    pairs.append((path, path))
+                continue
+            if pairmap is None:
+                continue
+            try:
+                translated = pairmap.translate(path, [0])
+            except Exception:  # noqa: BLE001 - unmappable path
+                translated = None
+            if translated is not None:
+                pairs.append((path, translated[0]))
+        return pairs
+
+    def _check_cancel(self, job) -> bool:
+        if not job.cancel_requested:
+            return False
+        job.cancelled = True
+        job.ok = False
+        job.phase = "cancelled"
+        job.message = "已取消本次处理；已写入的参数不会自动撤销"
+        job.finished = time.time()
+        log.warning("align[%s] cancelled after %d/%d writes",
+                    job.kind, job.written, job.total)
+        return True
+
+    async def _readback(self, job, dst: Console, dkey: str, items):
+        """Ask the target for its current values, compare, return mismatches."""
+        for i, (path, _val) in enumerate(items):
+            self._send(dst, path, [])
+            job.current = path
+            if i % 8 == 7:
+                await asyncio.sleep(0.004)
+        await asyncio.sleep(0.35)  # let the replies land
+        mism = []
+        view = self.state_by_src[dkey]
+        for path, val in items:
+            got = view.get(path)
+            if got is not None and self._args_match(val, got):
+                job.verified += 1
+            else:
+                mism.append((path, val))
+            job.done += 1
+        return mism
+
+    async def _run_job(self, job: AlignJob):
+        src_is_a = job.master == "a"
+        src, dst = (self.a, self.b) if src_is_a else (self.b, self.a)
+        skey, dkey = ("a", "b") if src_is_a else ("b", "a")
+        self._fs_busy = True  # alignment bypasses the sync delay
+        try:
+            # ---- 1 preflight: what may we touch at all? ----
+            job.phase = "preflight"
+            await asyncio.sleep(0.06)
+            pairs = self._safe_paths(job)
+            job.intersection = len(pairs)
+            job.total = len(pairs)
+            job.skipped = max(0, len(self.sync_paths) - len(pairs))
+            log.warning("align[%s]: preflight OK - %d safe parameter(s), %d skipped",
+                        job.kind, job.intersection, job.skipped)
+            if self._check_cancel(job):
+                return
+
+            # ---- 2 scan: pull the baseline console's live values ----
+            job.phase = "scan"
+            job.done = 0
+            for i, (spath, _dpath) in enumerate(pairs):
+                self._send(src, spath, [])
+                job.current = spath
+                job.done = i + 1
+                if i % 8 == 7:
+                    await asyncio.sleep(0.004)
+                    if self._check_cancel(job):
+                        return
+            await asyncio.sleep(0.35)  # replies settle
+
+            # ---- 3 align: write the baseline to the target ----
+            job.phase = "align"
+            job.done = 0
+            view = self.state_by_src[skey]
+            written = []
+            for i, (spath, dpath) in enumerate(pairs):
+                val = view.get(spath)
+                if val is not None:
+                    self._dispatch(dst, dpath, val)
+                    written.append((dpath, list(val)))
+                    job.written += 1
+                    job.current = dpath
+                job.done = i + 1
+                if i % 8 == 7:
+                    await asyncio.sleep(0.004)
+                    if self._check_cancel(job):
+                        return
+            await asyncio.sleep(0.12)
+
+            # ---- 4 verify: read back, auto-restore one round ----
+            job.phase = "verify"
+            job.done = 0
+            mism = await self._readback(job, dst, dkey, written)
+            if self._check_cancel(job):
+                return
+            if mism:
+                log.warning("align[%s]: %d value(s) failed read-back, re-writing",
+                            job.kind, len(mism))
+                for dpath, val in mism:
+                    self._dispatch(dst, dpath, val)
+                    job.restored += 1
+                await asyncio.sleep(0.2)
+                still = await self._readback(job, dst, dkey, mism)
+                for dpath, _val in still:
+                    job.pending += 1
+                    if not job.error_sample:
+                        job.error_sample = dpath
+            job.phase = "done"
+            job.ok = job.pending == 0 and job.errors == 0
+            job.message = ("安全检测通过，可以操作调音台" if job.ok
+                           else f"{job.pending} 个参数待核对，请检查链路后重试")
+        except asyncio.CancelledError:
+            job.cancelled = True
+            job.ok = False
+            job.phase = "cancelled"
+            job.message = "已取消本次处理；已写入的参数不会自动撤销"
+            raise
+        except Exception as exc:  # noqa: BLE001
+            job.phase = "failed"
+            job.ok = False
+            job.errors += 1
+            job.message = f"安全检测失败：{exc}"
+            log.exception("align job failed: %s", exc)
+        finally:
+            job.finished = job.finished or time.time()
+            self._fs_busy = False
+            self.stats["readback_ok"] = self.stats.get("readback_ok", 0) + job.verified
+            self.stats["readback_pending"] = self.stats.get("readback_pending", 0) + job.pending
+            self.stats["auto_restored"] = self.stats.get("auto_restored", 0) + job.restored
+            self.last_align = job.dict()
+            log.warning("align[%s] %s: written=%d verified=%d pending=%d restored=%d (%.1fs)",
+                        job.kind, job.phase, job.written, job.verified,
+                        job.pending, job.restored, job.elapsed())
+
     async def _full_sync(self):
         if self.drv_a.key != self.drv_b.key and self.pairmap_ab is None:
             log.warning("full sync skipped: cross-brand pairs need parameter mapping (not implemented)")
             return
-        src = self.a if self.full_sync_from == "a" else self.b
-        log.info("full state sync from %s: %d paths", src.name, len(self.sync_paths))
-        self._fs_busy = True  # baseline alignment bypasses the sync delay
-        try:
-            for path in self.sync_paths:
-                if self.sync_mode == "independent" and is_screen_path(path):
-                    continue  # never align screen state in independent mode
-                self._send(src, path, [])  # read request; reply gets forwarded
-                await asyncio.sleep(0.002)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            log.exception("full sync crashed: %s", exc)
-        finally:
-            self._fs_busy = False
+        job = self.job
+        if job is None or not job.active:
+            job = AlignJob("start", self.sync_mode, self.master)
+            self.job = job
+        await self._run_job(job)
 
     # ---- op-log ------------------------------------------------------
     def _init_db(self):
