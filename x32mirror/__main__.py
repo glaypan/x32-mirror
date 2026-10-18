@@ -18,6 +18,7 @@ from .engine import MirrorEngine, restore_snapshot
 from .ha import send_ha_command
 from .mapping import MAPS
 from .simulator import FADER_PATHS, MUTE_PATHS, MockRemoteApp, MockWing, MockX32
+from . import __version__
 
 
 async def cmd_run(cfg, duration=None):
@@ -643,6 +644,8 @@ def main(argv=None):
         return
 
     parser = argparse.ArgumentParser(prog="x32mirror", description="Digital console real-time mirror / sync backup")
+    parser.add_argument("--version", action="version",
+                        version=f"x32mirror {__version__}")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_gui = sub.add_parser("gui", help="launch the desktop GUI (default when no command given)")
