@@ -1,17 +1,12 @@
 name: build-macos
 
-# macOS 应用必须在 macOS 上构建（PyInstaller 不支持交叉编译）。
-# Intel 构建：Python 3.9 + PyInstaller 5.13（部署目标 10.13/10.9），
-# 以兼容 10.14.6 Mojave。
+# 打包的是"自带 Python 运行时"的 .app（见 packaging/build_mac_portable.py）：
+# 不依赖 PyInstaller，运行时与依赖均以 macOS 10.9 为目标，
+# 因此可在 macOS 10.14.6 Mojave 上运行。
+# 组装过程只下载官方产物与 wheel，不需要 macOS 机器。
 
 on:
   workflow_dispatch:
-    inputs:
-      arch:
-        description: "target arch"
-        type: choice
-        default: x86_64
-        options: [x86_64, universal2]
   push:
     tags: ["v*"]
 
@@ -20,41 +15,35 @@ permissions:
 
 jobs:
   macos:
-    runs-on: macos-15-intel
-    timeout-minutes: 40
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          # 3.9.13 is the newest 3.9 that still works with PyInstaller 5.x;
-          # 3.9.21+ breaks its bootstrap (missing ipaddress in base_library).
-          python-version: "3.9.13"
-          architecture: x64
+          python-version: "3.11"
 
-      - name: Install build dependencies
+      - name: Assemble portable .app
+        run: python packaging/build_mac_portable.py
+
+      - name: Verify minimum macOS version
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install "pyinstaller==5.13.2" "pywebview==5.4"
-          python - <<'PY'
-          import PyInstaller, webview, sys
-          print("python", sys.version.split()[0])
-          print("pyinstaller", PyInstaller.__version__)
-          print("pywebview", getattr(webview, "__version__", "ok"))
-          PY
-
-      - name: Build .app
-        run: python packaging/build_mac.py --arch "${{ inputs.arch || 'x86_64' }}"
-
-      - name: Report deployment target
-        run: |
-          echo "== main executable =="
-          otool -l dist/x32-mirror.app/Contents/MacOS/x32-mirror | grep -A6 LC_BUILD_VERSION || true
-          echo "== bundled Python =="
-          find dist/x32-mirror.app -name "Python" -type f | head -1 | xargs -I{} otool -l {} | grep -A6 LC_BUILD_VERSION || true
+          mkdir -p /tmp/macpkg
+          unzip -q dist/x32-mirror-*-macos-x86_64.zip -d /tmp/macpkg
+          python packaging/check_macos.py /tmp/macpkg --max 10.14
 
       - uses: actions/upload-artifact@v4
         with:
-          name: x32-mirror-macos-${{ inputs.arch || 'x86_64' }}
-          path: dist/*.zip
+          name: x32-mirror-macos-x86_64
+          path: dist/x32-mirror-*-macos-x86_64.zip
           if-no-files-found: error
+
+  # Optional native bundle for 10.15+ / Apple Silicon (not used for release):
+  # PyInstaller can only target the macOS version of the build host.
+  native:
+    if: false
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "disabled"

@@ -1,7 +1,12 @@
-"""Build the macOS .app bundle (run this ON a Mac).
+"""Build a native macOS .app on a Mac with PyInstaller (10.15+).
 
-    python3 packaging/build_mac.py --arch x86_64     # Intel / macOS 10.14+
+    python3 packaging/build_mac.py --arch x86_64
     python3 packaging/build_mac.py --arch universal2 # Intel + Apple Silicon
+
+NOTE: PyInstaller bundles the build host's libraries, so the result requires
+the macOS version it was built on (10.15+) - NOT suitable for 10.14 Mojave.
+For the release artifact use packaging/build_mac_portable.py, which ships a
+portable CPython runtime targeting macOS 10.9 and can be assembled anywhere.
 
 Outputs dist/x32-mirror-<ver>-macos-<arch>.zip containing x32-mirror.app.
 """
