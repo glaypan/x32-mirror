@@ -40,6 +40,18 @@
 
 ## 快速开始
 
+### 方式〇之前：下载免安装包（无需 Python）
+
+- **Windows 10/11 64 位**：`x32-mirror-<版本>-win64.zip`，解压双击 `x32-mirror.exe`
+- **macOS 10.14.6 Mojave 及以上（Intel）**：`x32-mirror-<版本>-macos-x86_64.zip`，
+  解压后把 `x32-mirror.app` 拖进「应用程序」；首次打不开时右键 → 打开
+  （未做 Apple 签名），或 `xattr -dr com.apple.quarantine /Applications/x32-mirror.app`
+
+两个包都自带运行时，配置在 Windows 是程序目录、macOS 是
+`~/Library/Application Support/x32-mirror/`。免安装包由
+`packaging/build_win.py` 与 `packaging/build_mac_portable.py` 生成；
+macOS 包内所有二进制以 10.9 为目标编译，可用 `packaging/check_macos.py` 复核。
+
 ### 方式〇：命令行一键安装（推荐）
 
 装一次，之后处处可用：
