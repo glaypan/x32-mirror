@@ -28,7 +28,8 @@ import zipfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKSPACE = os.path.dirname(ROOT)
 BUILD = os.path.join(WORKSPACE, "build", "mac-portable")
-DIST = os.path.join(WORKSPACE, "dist")
+# CI checkouts live one level below the workspace, so allow an override
+DIST = os.environ.get("X32MIRROR_DIST") or os.path.join(WORKSPACE, "dist")
 
 # 20230726 is the last release whose x86_64 macOS builds target 10.9.
 # (Later builds target 10.15+, which would exclude Mojave.)

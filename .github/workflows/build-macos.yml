@@ -25,6 +25,8 @@ jobs:
           python-version: "3.11"
 
       - name: Assemble portable .app
+        env:
+          X32MIRROR_DIST: ${{ github.workspace }}/dist
         run: python packaging/build_mac_portable.py
 
       - name: Verify minimum macOS version
