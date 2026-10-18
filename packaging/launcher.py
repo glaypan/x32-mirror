@@ -18,9 +18,27 @@ import sys
 
 
 def _base_dir() -> str:
-    if getattr(sys, "frozen", False):
-        return os.path.dirname(os.path.abspath(sys.executable))
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    """Writable folder for config.json / oplog / snapshots.
+
+    Windows: next to the exe (portable).  macOS: the app bundle is read-only
+    (and may be translocated by Gatekeeper), so use Application Support and
+    seed it with the bundled templates on first launch.
+    """
+    if not getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if sys.platform == "darwin":
+        import shutil
+
+        base = os.path.expanduser("~/Library/Application Support/x32-mirror")
+        os.makedirs(base, exist_ok=True)
+        bundle = os.path.dirname(os.path.abspath(sys.executable))
+        for name in ("config.json", "config-demo.json"):
+            dst = os.path.join(base, name)
+            src = os.path.join(bundle, name)
+            if not os.path.exists(dst) and os.path.exists(src):
+                shutil.copy2(src, dst)
+        return base
+    return os.path.dirname(os.path.abspath(sys.executable))
 
 
 def _ensure_console() -> None:

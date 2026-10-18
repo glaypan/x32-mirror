@@ -17,3 +17,7 @@ __pycache__/
 
 # tooling
 .workbuddy/
+
+# build output
+build/
+dist/
