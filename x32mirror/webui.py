@@ -22,7 +22,7 @@ from . import cloud
 from .desktop_page import DESKTOP_PAGE
 from .drivers import DRIVERS, get_driver
 from .engine import MirrorEngine, restore_snapshot
-from .gui import HELP_CAUTION, HELP_FAQ, HELP_USAGE
+from .helptext import HELP_CAUTION, HELP_FAQ, HELP_USAGE
 from .ha import send_ha_command
 
 log = logging.getLogger("x32mirror.web")

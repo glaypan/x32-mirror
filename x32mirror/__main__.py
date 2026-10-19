@@ -20,6 +20,8 @@ from .mapping import MAPS
 from .simulator import FADER_PATHS, MUTE_PATHS, MockRemoteApp, MockWing, MockX32
 from . import __version__
 
+log = logging.getLogger("x32mirror")
+
 
 async def cmd_run(cfg, duration=None):
     loop = asyncio.get_running_loop()

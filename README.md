@@ -153,6 +153,52 @@ python -m x32mirror web --http-port 8080 --autostart
 
 > 提示：手机与电脑必须在同一局域网；首次运行请放行防火墙 8080/TCP。双机热备时手机连当前 ACTIVE 节点。
 
+### 方式四：安卓手机直接当服务器（Termux，不用电脑）
+
+电脑不用开机：把镜像引擎跑在**安卓手机**上，手机自己当同步服务器（两台调音台 → 手机 → 两台调音台），
+其他手机/平板/电脑浏览器打开网页控制台即可操作。适合小型演出、租赁场地、机柜里放一台旧手机长期值守。
+
+**准备**（手机装这三样，来自 F-Droid 应用商店，不要用 Google Play 版本）：
+
+| 应用 | 作用 |
+|---|---|
+| **Termux** | 提供 Linux 环境（本工具唯一依赖是 `python`，纯标准库） |
+| **Termux:Boot** | 开机自动拉起（可选但强烈建议） |
+| **Termux:API** | 可选，读 WiFi 信息用 |
+
+**一键安装**：
+
+```bash
+# 在 Termux 里执行（会自动装 python、下载源码、配置 IP、装命令、配自启）
+curl -fsSL https://raw.githubusercontent.com/glaypan/x32-mirror/main/termux/install-termux.sh -o install-termux.sh
+bash install-termux.sh
+```
+
+也可以先把仓库下载/克隆到手机，再 `cd x32-mirror/termux && bash install-termux.sh`；
+无人值守全默认：`bash install-termux.sh --yes`。
+
+安装完成后多出两个命令：
+
+```bash
+x32mirrorctl start      # 启动（自动 termux-wake-lock 防休眠）
+x32mirrorctl status     # 是否在跑
+x32mirrorctl url        # 打印手机当前 IP 的访问地址
+x32mirrorctl log        # 看最近日志（logf 实时跟）
+x32mirrorctl stop       # 停止
+x32mirror                    # 桌面版命令也能用：show-config / snapshot / web ...
+```
+
+安装脚本会写入 `~/.termux/boot/10-x32mirror.sh`，装好 **Termux:Boot** 并打开一次后，手机重启会自动恢复服务。
+
+**安卓上必须做的两件事**（否则锁屏几分钟就被系统杀掉）：
+
+1. 系统设置 → 应用 → Termux → 电池 → **不限制 / 允许后台活动**
+2. 保留通知栏的 **Termux wakelock** 常驻通知（脚本已自动 `termux-wake-lock`）
+
+> 说明：手机上只跑网页控制台（`web`），没有桌面 GUI；手机与两台调音台要在同一局域网（手机热点也行，
+> 但热点重启后手机 IP 可能变化，用 `x32mirrorctl url` 重新确认）。安卓不会给普通 App 低于 1024 的端口，
+> 默认 8080 端口不受影响。
+
 ## 配置项（config.json）
 
 | 字段                 | 说明                                          |
