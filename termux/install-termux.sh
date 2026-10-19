@@ -101,7 +101,11 @@ if command -v python >/dev/null 2>&1; then
   ok "已安装：$(python -V 2>&1)"
 else
   say "  ${C_DIM}正在安装 python（约 50 MB，首次较慢）...${C_0}"
-  pkg install -y python || die "python 安装失败，请检查网络后重试"
+  if ! pkg install -y python; then
+    warn "直接安装失败，先更新软件索引再试（可能需要一两分钟）"
+    pkg update -y >/dev/null 2>&1 || true
+    pkg install -y python || die "python 安装失败，请检查网络后重试"
+  fi
   ok "已安装：$(python -V 2>&1)"
 fi
 python -c "import asyncio, sqlite3, http.server" 2>/dev/null \
@@ -123,7 +127,7 @@ fi
 if [ -f "$SRC/x32mirror/__init__.py" ]; then
   ok "使用已有源码：$SRC"
 else
-  command -v git >/dev/null 2>&1 || { say "  ${C_DIM}安装 git ...${C_0}"; pkg install -y git || die "git 安装失败"; }
+  command -v git >/dev/null 2>&1 || { say "  ${C_DIM}安装 git ...${C_0}"; pkg install -y git || { pkg update -y >/dev/null 2>&1; pkg install -y git; } || die "git 安装失败"; }
   say "  ${C_DIM}从 GitHub 克隆到 $SRC ...${C_0}"
   rm -rf "$SRC"
   git clone --depth 1 "$REPO_URL" "$SRC" \

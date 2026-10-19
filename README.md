@@ -170,6 +170,7 @@ python -m x32mirror web --http-port 8080 --autostart
 
 ```bash
 # 在 Termux 里执行（会自动装 python、下载源码、配置 IP、装命令、配自启）
+pkg install -y curl
 curl -fsSL https://raw.githubusercontent.com/glaypan/x32-mirror/main/termux/install-termux.sh -o install-termux.sh
 bash install-termux.sh
 ```
