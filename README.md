@@ -42,7 +42,7 @@
 
 ### 方式〇之前：下载免安装包（无需 Python）
 
-最新版下载页：**https://github.com/glaypan/x32-mirror/releases/latest**（当前 v1.2.1）
+最新版下载页：**https://github.com/glaypan/x32-mirror/releases/latest**（当前 v1.2.2）
 
 - **Windows 10/11 64 位**：`x32-mirror-<版本>-win64.zip`，解压双击 `x32-mirror.exe`
 - **macOS 10.14.6 Mojave 及以上（Intel）**：`x32-mirror-<版本>-macos-x86_64.zip`，
