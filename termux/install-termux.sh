@@ -12,6 +12,7 @@
 #      3. 生成/修改 config.json（两台调音台 IP、端口）
 #      4. 安装 x32mirror / x32mirrorctl 两个命令到 $PREFIX/bin
 #      5. 配置 termux-wake-lock（防休眠）+ Termux:Boot 开机自启
+#      装完可用 x32mirrorctl doctor 自检息屏保活的四个条件
 #      6. 打印手机访问地址（同一 WiFi 下的电脑、平板浏览器直接打开）
 #
 #  参数：
@@ -295,6 +296,140 @@ do_stop() {
   echo "已停止"
 }
 
+do_doctor() {
+  local bad=0 warn=0 p out lan
+  say() { printf '  \033[%sm%s\033[0m %s\n' "$1" "$2" "$3"; }
+  echo "x32-mirror 运行环境自检"
+  echo "========================================"
+
+  # 1. Termux 环境
+  if [ -d "/data/data/com.termux/files/usr" ]; then
+    say 32 "Termux    " "环境正常（$PREFIX）"
+  else
+    say 31 "Termux    " "不在 Termux 里运行，后台保活不可用"
+    bad=$((bad + 1))
+  fi
+
+  # 2. 进程与端口
+  if p="$(pid)"; then
+    say 32 "进程      " "运行中（PID $p）"
+  elif port_open; then
+    say 33 "进程      " "端口有响应但 PID 记录丢失（可 stop 后重启）"
+    warn=$((warn + 1))
+  else
+    say 31 "进程      " "未运行（x32mirrorctl start）"
+    bad=$((bad + 1))
+  fi
+
+  lan="$(ip)"
+  if [ "$lan" != "127.0.0.1" ] && python - "$lan" "$PORT" <<'PY'
+import socket, sys
+s = socket.socket(); s.settimeout(1.0)
+try:
+    s.connect((sys.argv[1], int(sys.argv[2]))); sys.exit(0)
+except Exception:
+    sys.exit(1)
+finally:
+    s.close()
+PY
+  then
+    say 32 "局域网    " "http://$lan:$PORT 可连"
+  else
+    say 31 "局域网    " "http://$lan:$PORT 连不上（检查 Wi-Fi 是否同网段）"
+    bad=$((bad + 1))
+  fi
+
+  # 3. 引擎是否真的在推进
+  if out="$(python - "$PORT" <<'PY'
+import json, sys, urllib.request
+try:
+    with urllib.request.urlopen("http://127.0.0.1:%s/api/status" % sys.argv[1], timeout=3) as r:
+        d = json.load(r)
+    st = d.get("stats") or {}
+    if not d.get("running"):
+        print("未启动镜像（网页里点开始，或加 --autostart）")
+        sys.exit(1)
+    print("镜像中 · 转发 %s / 读回 %s / 待核对 %s" % (
+        st.get("forwarded", "-"), st.get("readback_ok", "-"), st.get("readback_pending", "-")))
+except Exception as e:
+    print("接口无响应：%s" % e)
+    sys.exit(1)
+PY
+  )"; then
+    say 32 "引擎      " "$out"
+  else
+    say 31 "引擎      " "$out"
+    bad=$((bad + 1))
+  fi
+
+  # 4. 唤醒锁：命令存在 + 能否看到常驻状态
+  if command -v termux-wake-lock >/dev/null 2>&1; then
+    if command -v termux-notification-list >/dev/null 2>&1 \
+       && termux-notification-list 2>/dev/null | grep -qi "wakelock"; then
+      say 32 "唤醒锁    " "已持有（通知栏可见 Termux wakelock）"
+    elif command -v dumpsys >/dev/null 2>&1 && dumpsys power 2>/dev/null | grep -qi "termux"; then
+      say 32 "唤醒锁    " "系统电源状态里可见 Termux 锁"
+    else
+      say 33 "唤醒锁    " "无法读取状态，请确认通知栏有 Termux wakelock 常驻通知"
+      warn=$((warn + 1))
+    fi
+  else
+    say 31 "唤醒锁    " "缺少 termux-wake-lock（pkg install termux-api + 装 Termux:API）"
+    bad=$((bad + 1))
+  fi
+
+  # 5. 电池优化白名单
+  if command -v dumpsys >/dev/null 2>&1 && dumpsys deviceidle whitelist 2>/dev/null | grep -qi "com.termux"; then
+    say 32 "电池优化  " "Termux 已在白名单"
+  elif command -v dumpsys >/dev/null 2>&1 && dumpsys deviceidle whitelist 2>/dev/null | grep -q .; then
+    say 33 "电池优化  " "未放行：设置 → 应用 → Termux → 电池 → 不受限制"
+    warn=$((warn + 1))
+  else
+    say 33 "电池优化  " "无法读取，请手动设为「不受限制」，否则息屏后 Doze 会掐网络"
+    warn=$((warn + 1))
+  fi
+
+  # 6. Termux:Boot 自启
+  if [ -f "$HOME/.termux/boot/10-x32mirror.sh" ]; then
+    if command -v pm >/dev/null 2>&1 && ! pm list packages 2>/dev/null | grep -q "com.termux.boot"; then
+      say 33 "开机自启  " "脚本已写，但未装 Termux:Boot，重启后不会自启"
+      warn=$((warn + 1))
+    else
+      say 32 "开机自启  " "Termux:Boot 脚本就绪"
+    fi
+  else
+    say 33 "开机自启  " "未配置（重跑安装脚本）"
+    warn=$((warn + 1))
+  fi
+
+  # 7. Python 运行时
+  if python -c "import asyncio, sqlite3, json" 2>/dev/null; then
+    say 32 "Python    " "$(python -V 2>&1)"
+  else
+    say 31 "Python    " "缺少标准库模块，重装：pkg install python"
+    bad=$((bad + 1))
+  fi
+
+  # 8. 最近日志异常
+  if [ -s "$LOG" ] && tail -n 200 "$LOG" | grep -qiE "traceback|address already in use"; then
+    say 33 "日志      " "最近有异常，看：x32mirrorctl log 60"
+    warn=$((warn + 1))
+  else
+    say 32 "日志      " "最近无异常"
+  fi
+
+  echo "========================================"
+  if [ "$bad" -eq 0 ] && [ "$warn" -eq 0 ]; then
+    echo "结论：全部通过，息屏与退出界面都能保持同步。"
+  elif [ "$bad" -eq 0 ]; then
+    echo "结论：可用，有 $warn 项建议处理（见上）。"
+  else
+    echo "结论：$bad 项异常、$warn 项提醒，逐条处理后重跑 doctor。"
+  fi
+  echo "访问地址：http://$(ip):$PORT"
+  echo "保活三件事：电池不受限制、通知栏保留 wakelock、不要用手机热点。"
+}
+
 case "${1:-status}" in
   start)   do_start ;;
   stop)    do_stop ;;
@@ -308,12 +443,13 @@ case "${1:-status}" in
   clean)   : > "$LOG"; echo "日志已清空" ;;
   ip)      ip ;;
   url)     echo "http://$(ip):$PORT" ;;
-  *) echo "用法：x32mirrorctl {start|stop|restart|status|log|logf|clean|ip|url}"; exit 1 ;;
+  doctor)  do_doctor ;;
+  *) echo "用法：x32mirrorctl {start|stop|restart|status|doctor|log|logf|clean|ip|url}"; exit 1 ;;
 esac
 CTL
 sed -i "s|@SRC@|$SRC|g; s|@STATE@|$STATE_DIR|g; s|@PORT@|$HTTP_PORT|g" "$PREFIX/bin/x32mirrorctl"
 chmod 755 "$PREFIX/bin/x32mirrorctl"
-ok "x32mirrorctl {start|stop|restart|status|log|ip|url}"
+ok "x32mirrorctl {start|stop|restart|status|doctor|log|ip|url}"
 
 # ----------------------------------------------------------------- 5. 自启
 if [ "$DO_BOOT" = "1" ]; then

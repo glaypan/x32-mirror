@@ -184,11 +184,22 @@ bash install-termux.sh
 
 ```bash
 x32mirrorctl start      # 启动（自动 termux-wake-lock 防休眠）
+x32mirrorctl doctor     # 自检：息屏保活的 8 项条件逐条给结论
 x32mirrorctl status     # 是否在跑
 x32mirrorctl url        # 打印手机当前 IP 的访问地址
 x32mirrorctl log        # 看最近日志（logf 实时跟）
 x32mirrorctl stop       # 停止
 x32mirror                    # 桌面版命令也能用：show-config / snapshot / web ...
+```
+
+`doctor` 会检查 Termux 环境、进程与端口、局域网可达、引擎是否真在推进、唤醒锁、电池白名单、
+Termux:Boot 自启、Python 与日志异常，逐项给 ✓ / ! / ✗：
+
+```
+  ✓ 进程       运行中（PID 4812）
+  ✓ 局域网     http://192.168.1.23:8080 可连
+  ✓ 引擎       镜像中 · 转发 1099 / 读回 1093 / 待核对 0
+  ! 电池优化   未放行：设置 → 应用 → Termux → 电池 → 不受限制
 ```
 
 安装脚本会写入 `~/.termux/boot/10-x32mirror.sh`，装好 **Termux:Boot** 并打开一次后，手机重启会自动恢复服务。
